@@ -47,7 +47,7 @@ fi
 license_section='## License
 
 Licensed under MIT, see LICENSE'
-if [[ "$readme_content" != *"$license_section"* ]]; then
+if [[ "$readme_content" != *"$license_section" ]]; then
   echo "README.md License section must be the single line 'Licensed under MIT, see LICENSE'" >&2
   missing=1
 fi
