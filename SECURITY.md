@@ -26,7 +26,7 @@ In scope for this repository:
 
 Out of scope:
 
-- The AGPL proxy binary and its HTTP surface (report those to `barzoj-co/llm-test-lab`)
+- The proxy binary and its HTTP surface (report those to `barzoj-co/llm-test-lab`)
 - Upstream LLM providers
 - Secrets you paste into issues, logs, or traces
 

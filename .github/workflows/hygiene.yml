@@ -52,6 +52,8 @@ jobs:
         run: ./scripts/check-workflow-policy.sh
       - name: README badges and repo block
         run: ./scripts/check-readme.sh
+      - name: MIT-only documentation
+        run: ./scripts/check-mit-docs.sh
       - name: Validate issue forms
         run: |
           python3 -m venv "${RUNNER_TEMP}/hygiene-venv"

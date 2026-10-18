@@ -5,7 +5,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Feature requests for the AGPL proxy belong in [barzoj-co/llm-test-lab](https://github.com/barzoj-co/llm-test-lab).
+        Feature requests for the proxy belong in [barzoj-co/llm-test-lab](https://github.com/barzoj-co/llm-test-lab).
   - type: textarea
     id: problem
     attributes:

@@ -9,7 +9,7 @@ either.
 ## Requirements
 
 - Go 1.22 or newer (CI uses 1.26.x to match the proxy).
-- The AGPL proxy from [barzoj-co/llm-test-lab](https://github.com/barzoj-co/llm-test-lab)
+- The proxy from [barzoj-co/llm-test-lab](https://github.com/barzoj-co/llm-test-lab)
   for integration and e2e tests.
 
 ## Local checks
@@ -54,6 +54,7 @@ actionlint
 ./scripts/check-pinned-actions.sh --self-test
 ./scripts/check-workflow-policy.sh
 ./scripts/check-readme.sh
+./scripts/check-mit-docs.sh
 ```
 
 Install `actionlint` from the [rhysd/actionlint releases](https://github.com/rhysd/actionlint/releases)

@@ -12,17 +12,17 @@ deterministic, trace-based integration tests for LLM apps. The client never uses
 an LLM judge. Assertions run against calls recorded by the local proxy binary.
 
 This repository is the Go equivalent of `llm-test-lab-python` and
-`llm-test-lab-js`: a small MIT library that talks to the AGPL proxy.
+`llm-test-lab-js`.
 
 <!-- ltl-repos:start -->
 ## llm-test-lab repositories
 
-| Repository | What | License |
-|---|---|---|
-| [llm-test-lab](https://github.com/barzoj-co/llm-test-lab) | Recording proxy binary (Go) | AGPL-3.0 |
-| [llm-test-lab-go](https://github.com/barzoj-co/llm-test-lab-go) | Go client for `go test` | MIT |
-| [llm-test-lab-python](https://github.com/barzoj-co/llm-test-lab-python) | Python client and pytest plugin | MIT |
-| [llm-test-lab-js](https://github.com/barzoj-co/llm-test-lab-js) | TypeScript/JavaScript client for Vitest and Jest | MIT |
+| Repository | What |
+|---|---|
+| [llm-test-lab](https://github.com/barzoj-co/llm-test-lab) | Recording proxy binary (Go) |
+| [llm-test-lab-go](https://github.com/barzoj-co/llm-test-lab-go) | Go client for `go test` |
+| [llm-test-lab-python](https://github.com/barzoj-co/llm-test-lab-python) | Python client and pytest plugin |
+| [llm-test-lab-js](https://github.com/barzoj-co/llm-test-lab-js) | TypeScript/JavaScript client for Vitest and Jest |
 <!-- ltl-repos:end -->
 
 ## Install
@@ -109,5 +109,4 @@ There is no CGO and no post-install hook.
 
 ## License
 
-MIT. The proxy binary in [barzoj-co/llm-test-lab](https://github.com/barzoj-co/llm-test-lab)
-is AGPL-3.0; using it from tests does not change your application's license.
+Licensed under MIT, see LICENSE
