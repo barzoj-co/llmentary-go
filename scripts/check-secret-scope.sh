@@ -92,13 +92,17 @@ INSTALL_NEEDLES = (
 )
 
 RAW_SECRET = re.compile(
-    r"\$\{\{\s*(?:secrets\.([A-Za-z0-9_]+)|github\.token)\s*\}\}"
+    r"\$\{\{\s*(?:secrets(?:\.([A-Za-z0-9_]+)|\[\s*['\"]([A-Za-z0-9_]+)['\"]\s*\])|github\.token)\s*\}\}"
 )
 BOOL_SECRET = re.compile(
-    r"""\$\{\{\s*secrets\.[A-Za-z0-9_]+\s*(?:!=|==)\s*(?:''|"")\s*\}\}"""
+    r"""\$\{\{\s*secrets(?:\.[A-Za-z0-9_]+|\[\s*['"][A-Za-z0-9_]+['"]\s*\])\s*(?:!=|==)\s*(?:''|"")\s*\}\}"""
 )
 RUN_SECRET = re.compile(
-    r"\$\{\{\s*(?:secrets\.[A-Za-z0-9_]+|github\.token)"
+    r"\$\{\{[^}]*\b(?:secrets\b|github\.token)"
+)
+ANY_SECRET_REF = re.compile(r"\$\{\{[^}]*\bsecrets\b")
+WHOLE_SECRETS = re.compile(
+    r"\$\{\{[^}]*(?:toJSON\s*\(\s*secrets\s*\)|(?<![\w.])secrets\s*\}\})"
 )
 TOKEN_EXEMPT = {"GITHUB_TOKEN", "github.token"}
 
@@ -188,12 +192,20 @@ def raw_secrets_in(text: str) -> list[str]:
         return []
     names = []
     for match in RAW_SECRET.finditer(text):
-        names.append(match.group(1) or "github.token")
+        names.append(match.group(1) or match.group(2) or "github.token")
     return names
 
 
 def is_boolean_secret(text: str) -> bool:
     return bool(BOOL_SECRET.fullmatch(text.strip())) if text else False
+
+
+def contains_secret_ref(text: str) -> bool:
+    if not text or is_boolean_secret(text):
+        return False
+    if ANY_SECRET_REF.search(text):
+        return True
+    return "${{" in text and "github.token" in text
 
 
 def is_checkout_uses(value: str | None) -> bool:
@@ -214,10 +226,14 @@ def job_environment(job_node):
 
 
 def openai_secret_hits(job_node):
-    needle = f"secrets.{openai_secret}"
+    dotted = f"secrets.{openai_secret}"
+    bracket = re.compile(
+        rf"secrets\[\s*['\"]{re.escape(openai_secret)}['\"]\s*\]"
+    )
     hits = []
     for s in walk_strings(job_node):
-        if s.value and needle in s.value:
+        val = s.value or ""
+        if dotted in val or bracket.search(val) or WHOLE_SECRETS.search(val):
             hits.append(s)
     return hits
 
@@ -254,13 +270,8 @@ def check_file(path: pathlib.Path) -> list[str]:
     _, env_node = mapping_get(root_node, "env")
     if env_node is not None:
         for s in walk_strings(env_node):
-            if raw_secrets_in(s.value) or (
-                "secrets." in s.value and not is_boolean_secret(s.value)
-            ):
-                if RAW_SECRET.search(s.value) or (
-                    "${{" in s.value and "secrets." in s.value and not is_boolean_secret(s.value)
-                ):
-                    errors.append(f"{rel}:{line_of(s)}: secret in workflow-level env")
+            if contains_secret_ref(s.value):
+                errors.append(f"{rel}:{line_of(s)}: secret in workflow-level env")
 
     _, jobs_node = mapping_get(root_node, "jobs")
     jobs: dict[str, yaml.Node] = {}
@@ -277,7 +288,8 @@ def check_file(path: pathlib.Path) -> list[str]:
             _, needs_node = mapping_get(gate, "needs")
             if_text = scalar(if_node) or ""
             needs = job_needs_list(needs_node)
-            if "always()" in if_text and e2e_job in needs:
+            normalized_if = "".join(if_text.split())
+            if normalized_if in {"always()", "${{always()}}"} and e2e_job in needs:
                 ok = True
         if not ok:
             line = 1
@@ -332,9 +344,7 @@ def check_job(rel: str, job_id: str, job_node, errors: list[str]) -> None:
     _, env_node = mapping_get(job_node, "env")
     if env_node is not None:
         for s in walk_strings(env_node):
-            if raw_secrets_in(s.value) or (
-                "${{" in s.value and "secrets." in s.value and not is_boolean_secret(s.value)
-            ):
+            if contains_secret_ref(s.value):
                 errors.append(f"{rel}:{line_of(s)}: secret in job-level env")
 
     _, steps_node = mapping_get(job_node, "steps")
@@ -372,9 +382,7 @@ def check_step(rel, job_id, step, errors, raw_uses) -> None:
         for key, key_node, value_node in iter_mapping(with_node):
             for s in walk_strings(value_node):
                 secrets = raw_secrets_in(s.value)
-                if not secrets and not (
-                    "${{" in s.value and ("secrets." in s.value or "github.token" in s.value)
-                ):
+                if not secrets and not contains_secret_ref(s.value):
                     continue
                 if key == "token" and is_checkout_uses(uses):
                     for name in secrets or ["<secret>"]:
@@ -388,9 +396,7 @@ def check_step(rel, job_id, step, errors, raw_uses) -> None:
             if is_boolean_secret(s.value):
                 continue
             names = raw_secrets_in(s.value)
-            if not names and "${{" in s.value and (
-                "secrets." in s.value or "github.token" in s.value
-            ):
+            if not names and contains_secret_ref(s.value):
                 names = ["<secret>"]
             for name in names:
                 step_raw.append((name, line_of(s)))

@@ -46,7 +46,8 @@ run_case() {
       bash "${SCRIPT}" 2>&1
   )" || rc=$?
 
-  echo "-- E2E_RESULT=${result@Q} EVENT_NAME=${event@Q} IS_FORK=${is_fork@Q} (rc=${rc}) --"
+  printf -- '-- E2E_RESULT=%q EVENT_NAME=%q IS_FORK=%q (rc=%s) --\n' \
+    "${result}" "${event}" "${is_fork}" "${rc}"
   printf '%s\n' "${out}"
 
   if [[ "${rc}" -ne "${expect_rc}" ]]; then

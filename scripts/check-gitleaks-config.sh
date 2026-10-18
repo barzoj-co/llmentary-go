@@ -58,22 +58,24 @@ self_test() {
   openai_key="sk-$(rand_alnum 20)${infix}$(rand_alnum 20)"
   github_pat="ghp_$(rand_alnum 36)"
 
-  mkdir -p "${tmp}/dirty/e2e"
-  printf 'KEY=%s\n' "${openai_key}" >"${tmp}/dirty/README.md"
-  printf 'KEY=%s\n' "${github_pat}" >"${tmp}/dirty/e2e/note.txt"
+  mkdir -p "${tmp}/dirty-openai" "${tmp}/dirty-pat/e2e"
+  printf 'KEY=%s\n' "${openai_key}" >"${tmp}/dirty-openai/README.md"
+  printf 'KEY=%s\n' "${github_pat}" >"${tmp}/dirty-pat/e2e/note.txt"
   unset openai_key github_pat
 
-  rc=0
-  out="$(scan_dir "${tmp}/dirty" 2>&1)" || rc=$?
-  printf '%s\n' "${out}"
-  if [[ "${rc}" -eq 0 ]]; then
-    echo "self-test: realistic keys under README.md and e2e/ must exit 1" >&2
-    failed=1
-  fi
-  if ! grep -Eqi 'leaks found|leak' <<<"${out}"; then
-    echo "self-test: expected a leak summary" >&2
-    failed=1
-  fi
+  for label in openai pat; do
+    rc=0
+    out="$(scan_dir "${tmp}/dirty-${label}" 2>&1)" || rc=$?
+    printf '%s\n' "${out}"
+    if [[ "${rc}" -eq 0 ]]; then
+      echo "self-test: ${label} key under an allowlisted-looking path must exit 1" >&2
+      failed=1
+    fi
+    if ! grep -Eqi 'leaks found|leak' <<<"${out}"; then
+      echo "self-test: expected a leak summary for ${label} key" >&2
+      failed=1
+    fi
+  done
 
   if [[ "${failed}" -ne 0 ]]; then
     echo "self-test failed" >&2

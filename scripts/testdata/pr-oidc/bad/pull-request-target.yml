@@ -1,0 +1,8 @@
+on: pull_request_target
+jobs:
+  t:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    steps:
+      - run: echo ok
