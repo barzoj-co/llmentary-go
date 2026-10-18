@@ -28,6 +28,7 @@ jobs:
           manifest-file: .release-please-manifest.json
       - name: Warm Go module proxy
         if: ${{ steps.release.outputs.release_created && !github.event.repository.private }}
+        continue-on-error: true
         run: |
           tag="${{ steps.release.outputs.tag_name }}"
           curl -fsSL "https://proxy.golang.org/github.com/barzoj-co/llm-test-lab-go/@v/${tag}.info"

@@ -38,7 +38,8 @@ canonical_block='<!-- ltl-repos:start -->
 | [llm-test-lab-js](https://github.com/barzoj-co/llm-test-lab-js) | TypeScript/JavaScript client for Vitest and Jest | MIT |
 <!-- ltl-repos:end -->'
 
-if ! grep -Fq "$canonical_block" "$README"; then
+readme_content="$(<"$README")"
+if [[ "$readme_content" != *"$canonical_block"* ]]; then
   echo "README.md missing or altered canonical ltl-repos block" >&2
   missing=1
 fi
