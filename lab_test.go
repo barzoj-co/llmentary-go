@@ -76,6 +76,21 @@ func TestResponseJSONSchemaValid(t *testing.T) {
 	})
 }
 
+func TestTTFTBelowRequiresFirstByte(t *testing.T) {
+	tb := &fakeTB{}
+	a := &Assertions{t: tb, trace: Trace{SessionID: "s", Calls: []Call{{Seq: 1}}}}
+	if a.TTFTBelow(time.Second) {
+		t.Fatal("expected failure when no first-byte time is recorded")
+	}
+	if !tb.failed {
+		t.Fatal("expected non-fatal failure")
+	}
+	joined := strings.Join(tb.messages, "\n")
+	if !strings.Contains(joined, "no first-byte time was reported") {
+		t.Fatalf("message=%q", joined)
+	}
+}
+
 func TestJSONPathMissingKeyDoesNotMatchNull(t *testing.T) {
 	var value any
 	if err := json.Unmarshal([]byte(`{"present":null}`), &value); err != nil {

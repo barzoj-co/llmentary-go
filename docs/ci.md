@@ -4,7 +4,8 @@ This repository's workflow is `.github/workflows/ci.yml`:
 
 - `lint`: `go vet` and `golangci-lint-action@v8`
 - `test`: unit tests for the MIT client (`go test ./...`)
-- `e2e`: non-fork only; builds the proxy from
+- `e2e`: non-fork pull requests and pushes to `main` only (avoids running the
+  paid OpenAI suite twice on the same commit); builds the proxy from
   `barzoj-co/llm-test-lab` source using `secrets.LLMTESTLAB_REPO_TOKEN`, runs the
   mock-upstream example, then runs real OpenAI tests with `secrets.OPENAI_API_KEY`
 

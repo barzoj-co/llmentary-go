@@ -71,8 +71,9 @@ func TestWeatherTool(t *testing.T) {
 OPENAI_API_KEY=sk-... go test ./...
 ```
 
-`New(t)` can also start the proxy for you via `StartForTest` if you prefer not
-to run it as a sidecar (see [docs/go-client.md](docs/go-client.md)).
+If you prefer not to run the proxy as a sidecar, start it with
+`llmtestlab.StartForTest(t, ...)` and pass `proxy.ProxyURL` / `proxy.ControlURL`
+to `New` via `WithProxyURL` / `WithControlURL` (see [docs/go-client.md](docs/go-client.md)).
 
 ## Binary resolution
 

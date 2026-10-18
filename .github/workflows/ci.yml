@@ -17,8 +17,15 @@ jobs:
         with:
           go-version: "1.26.x"
           cache: true
+          cache-dependency-path: |
+            go.mod
+            examples/go/go.sum
+            e2e/go.sum
       - name: go vet
-        run: go vet ./...
+        run: |
+          go vet ./...
+          (cd examples/go && go vet ./...)
+          (cd e2e && go vet -tags=e2e ./...)
       - uses: golangci/golangci-lint-action@v8
         with:
           version: latest
@@ -36,12 +43,26 @@ jobs:
 
   e2e:
     runs-on: ubuntu-latest
-    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork != true }}
+    if: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork != true) || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
     env:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       OPENAI_E2E_MODEL: ${{ vars.OPENAI_E2E_MODEL }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Require secrets
+        env:
+          HAS_REPO_TOKEN: ${{ secrets.LLMTESTLAB_REPO_TOKEN != '' }}
+        run: |
+          echo "LLMTESTLAB_REPO_TOKEN present: ${HAS_REPO_TOKEN}"
+          if [ -z "$OPENAI_API_KEY" ]; then
+            echo "::error::OPENAI_API_KEY is required for non-fork e2e runs"
+            exit 1
+          fi
+          if [ "${HAS_REPO_TOKEN}" != "true" ]; then
+            echo "::error::LLMTESTLAB_REPO_TOKEN is required to build the proxy from source"
+            exit 1
+          fi
 
       # TODO: switch to GitHub Release binaries from barzoj-co/llm-test-lab
       # (checksum-verified via llmtestlab.DownloadRelease) when that repository
@@ -64,20 +85,6 @@ jobs:
             examples/go/go.mod
             e2e/go.mod
             llm-test-lab/go.mod
-
-      - name: Require secrets
-        env:
-          HAS_REPO_TOKEN: ${{ secrets.LLMTESTLAB_REPO_TOKEN != '' }}
-        run: |
-          echo "LLMTESTLAB_REPO_TOKEN present: ${HAS_REPO_TOKEN}"
-          if [ -z "$OPENAI_API_KEY" ]; then
-            echo "::error::OPENAI_API_KEY is required for non-fork e2e runs"
-            exit 1
-          fi
-          if [ "${HAS_REPO_TOKEN}" != "true" ]; then
-            echo "::error::LLMTESTLAB_REPO_TOKEN is required to build the proxy from source"
-            exit 1
-          fi
 
       - name: Build proxy from source
         working-directory: llm-test-lab

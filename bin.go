@@ -137,14 +137,32 @@ func WithStartOutput(stdout, stderr io.Writer) StartOption {
 	}
 }
 
+// syncedBuffer is a bytes.Buffer safe for concurrent Write and String.
+type syncedBuffer struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (s *syncedBuffer) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.Write(p)
+}
+
+func (s *syncedBuffer) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.String()
+}
+
 // Proxy is a running llm-test-lab proxy process started by this client.
 type Proxy struct {
 	Bin        string
 	ProxyURL   string
 	ControlURL string
 	cmd        *exec.Cmd
-	stdout     *bytes.Buffer
-	stderr     *bytes.Buffer
+	stdout     *syncedBuffer
+	stderr     *syncedBuffer
 	stopOnce   sync.Once
 	stopErr    error
 }
@@ -198,8 +216,8 @@ func Start(ctx context.Context, opts ...StartOption) (*Proxy, error) {
 	// Do not bind the process to ctx: ctx only covers the health wait.
 	cmd := exec.Command(bin, args...)
 	cmd.Dir = cfg.dir
-	stdout := &bytes.Buffer{}
-	stderr := &bytes.Buffer{}
+	stdout := &syncedBuffer{}
+	stderr := &syncedBuffer{}
 	cmd.Stdout = io.MultiWriter(stdout, discardIfNil(cfg.stdout))
 	cmd.Stderr = io.MultiWriter(stderr, discardIfNil(cfg.stderr))
 	if err := cmd.Start(); err != nil {
@@ -258,20 +276,38 @@ func (p *Proxy) Stop() error {
 		if p.cmd == nil || p.cmd.Process == nil {
 			return
 		}
-		_ = p.cmd.Process.Signal(os.Interrupt)
 		done := make(chan error, 1)
 		go func() { done <- p.cmd.Wait() }()
+		sigErr := p.cmd.Process.Signal(os.Interrupt)
+		if sigErr != nil {
+			p.stopErr = finishStop(p.cmd, done, true)
+			return
+		}
 		select {
 		case err := <-done:
-			if err != nil && !isExpectedExit(err) {
+			if err != nil && !isExpectedExit(err, false) {
 				p.stopErr = err
 			}
 		case <-time.After(2 * time.Second):
-			_ = p.cmd.Process.Kill()
-			p.stopErr = <-done
+			p.stopErr = finishStop(p.cmd, done, true)
 		}
 	})
 	return p.stopErr
+}
+
+func finishStop(cmd *exec.Cmd, done <-chan error, killed bool) error {
+	killErr := cmd.Process.Kill()
+	waitErr := <-done
+	if waitErr != nil && !isExpectedExit(waitErr, killed) {
+		if killErr != nil {
+			return fmt.Errorf("kill: %v (wait: %v)", killErr, waitErr)
+		}
+		return waitErr
+	}
+	if waitErr == nil && killErr != nil && !errors.Is(killErr, os.ErrProcessDone) {
+		return killErr
+	}
+	return nil
 }
 
 // Output returns captured stdout and stderr. Do not log this if it might
@@ -347,11 +383,21 @@ func discardIfNil(w io.Writer) io.Writer {
 	return w
 }
 
-func isExpectedExit(err error) bool {
+func isExpectedExit(err error, killed bool) bool {
+	if err == nil {
+		return true
+	}
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {
 		status := exitErr.ExitCode()
-		return status == 0 || status == -1 || status == 130 || status == 143
+		if status == 0 || status == -1 || status == 130 || status == 143 {
+			return true
+		}
+		// Windows Kill often yields exit status 1.
+		if killed && status == 1 {
+			return true
+		}
 	}
-	return false
+	msg := err.Error()
+	return strings.Contains(msg, "signal: killed") || strings.Contains(msg, "signal: interrupt")
 }

@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -81,7 +82,11 @@ func DownloadRelease(ctx context.Context, opts DownloadOptions) (string, error) 
 	if client == nil {
 		client = http.DefaultClient
 	}
-	token := firstNonEmpty(opts.Token, os.Getenv("LLMTESTLAB_GITHUB_TOKEN"), os.Getenv("GH_TOKEN"), os.Getenv("GITHUB_TOKEN"), os.Getenv("LLMTESTLAB_REPO_TOKEN"))
+	token := strings.TrimSpace(opts.Token)
+	// Do not send ambient GitHub tokens to a custom BaseURL (tests / mirrors).
+	if token == "" && strings.TrimSpace(opts.BaseURL) == "" {
+		token = firstNonEmpty(os.Getenv("LLMTESTLAB_GITHUB_TOKEN"), os.Getenv("GH_TOKEN"), os.Getenv("GITHUB_TOKEN"), os.Getenv("LLMTESTLAB_REPO_TOKEN"))
+	}
 
 	archiveURL := releaseAssetURL(opts.BaseURL, repo, tag, archiveName)
 	sumsURL := releaseAssetURL(opts.BaseURL, repo, tag, checksumsName)
@@ -280,9 +285,20 @@ func firstNonEmpty(values ...string) string {
 }
 
 func redactedURL(rawURL string) string {
-	// Keep host + path; never include userinfo or query (tokens sometimes leak there).
-	if i := strings.Index(rawURL, "?"); i >= 0 {
-		rawURL = rawURL[:i]
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		if i := strings.Index(rawURL, "?"); i >= 0 {
+			rawURL = rawURL[:i]
+		}
+		if at := strings.LastIndex(rawURL, "@"); at >= 0 {
+			if scheme := strings.Index(rawURL, "://"); scheme >= 0 && scheme < at {
+				return rawURL[:scheme+3] + rawURL[at+1:]
+			}
+		}
+		return rawURL
 	}
-	return rawURL
+	u.User = nil
+	u.RawQuery = ""
+	u.Fragment = ""
+	return u.String()
 }

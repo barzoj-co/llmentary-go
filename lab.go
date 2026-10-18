@@ -509,14 +509,19 @@ func (a *Assertions) LatencyBelow(d time.Duration) bool {
 
 func (a *Assertions) TTFTBelow(d time.Duration) bool {
 	a.t.Helper()
+	known := false
 	for _, call := range a.trace.Calls {
 		if call.FirstByteAt == nil {
 			continue
 		}
+		known = true
 		ttft := call.FirstByteAt.Sub(call.StartedAt)
 		if ttft >= d {
 			return a.fail("call #%d TTFT %s exceeds %s", call.Seq, ttft, d)
 		}
+	}
+	if !known {
+		return a.fail("no first-byte time was reported")
 	}
 	return true
 }

@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -76,6 +77,52 @@ func TestDownloadReleaseChecksumMismatch(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected checksum mismatch")
+	}
+}
+
+func TestDownloadReleaseDoesNotSendAmbientTokenToCustomHost(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "ambient-secret")
+	t.Setenv("GH_TOKEN", "ambient-secret")
+	t.Setenv("LLMTESTLAB_GITHUB_TOKEN", "ambient-secret")
+	t.Setenv("LLMTESTLAB_REPO_TOKEN", "ambient-secret")
+
+	archive, sum := testTarGz(t, "llmtestlab", []byte("payload"))
+	archiveName := "llm-test-lab_0.1.0_linux_amd64.tar.gz"
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v0.1.0/"+archiveName, func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "" {
+			t.Errorf("unexpected Authorization header %q", got)
+		}
+		_, _ = w.Write(archive)
+	})
+	mux.HandleFunc("/v0.1.0/checksums.txt", func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "" {
+			t.Errorf("unexpected Authorization header %q", got)
+		}
+		_, _ = w.Write([]byte(sum + "  " + archiveName + "\n"))
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	if _, err := DownloadRelease(context.Background(), DownloadOptions{
+		Version:    "v0.1.0",
+		DestDir:    t.TempDir(),
+		BaseURL:    srv.URL,
+		GOOS:       "linux",
+		GOARCH:     "amd64",
+		HTTPClient: srv.Client(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRedactedURLStripsUserinfo(t *testing.T) {
+	got := redactedURL("https://user:password@example.test/path?token=abc")
+	if strings.Contains(got, "password") || strings.Contains(got, "token=") || strings.Contains(got, "user") {
+		t.Fatalf("redactedURL leaked secrets: %q", got)
+	}
+	if !strings.Contains(got, "example.test/path") {
+		t.Fatalf("redactedURL=%q", got)
 	}
 }
 
