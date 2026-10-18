@@ -1,0 +1,25 @@
+coverage:
+  status:
+    project:
+      default:
+        informational: true
+    patch:
+      default:
+        informational: true
+
+comment:
+  layout: "condensed_header, diff, flags, files"
+  require_changes: false
+
+flags:
+  unit:
+    carryforward: true
+  integration:
+    carryforward: true
+
+ignore:
+  - "examples/**"
+  - "e2e/**"
+
+github_checks:
+  annotations: false

@@ -4,5 +4,8 @@ dist/
 *.exe
 *.test
 coverage.out
+coverage-unit.out
+coverage-integration.out
+
 .idea/
 .vscode/

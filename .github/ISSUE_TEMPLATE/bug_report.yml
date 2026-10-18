@@ -1,0 +1,107 @@
+name: Bug report
+description: Report a bug in the MIT Go client
+labels: [bug, needs-triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for a bug report. Remove API keys, tokens, and private prompts before submitting.
+        Proxy bugs belong in [barzoj-co/llm-test-lab](https://github.com/barzoj-co/llm-test-lab/issues).
+  - type: input
+    id: client_version
+    attributes:
+      label: Client / module version
+      description: The `github.com/barzoj-co/llm-test-lab-go` version or commit you are using.
+      placeholder: v0.1.0 or go.mod pseudo-version
+    validations:
+      required: true
+  - type: input
+    id: proxy_version
+    attributes:
+      label: Proxy version
+      description: Version or commit of the `llm-test-lab` proxy binary.
+      placeholder: v0.1.0
+    validations:
+      required: true
+  - type: input
+    id: go_version
+    attributes:
+      label: Go version
+      description: Output of `go version`.
+      placeholder: go1.26.0 linux/amd64
+    validations:
+      required: true
+  - type: input
+    id: os_arch
+    attributes:
+      label: OS / architecture
+      placeholder: linux/amd64
+    validations:
+      required: true
+  - type: dropdown
+    id: binary_source
+    attributes:
+      label: How the proxy binary is obtained
+      options:
+        - LLMTESTLAB_BIN
+        - PATH (llm-test-lab or llmtestlab)
+        - DownloadRelease
+        - Built from source
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: provider
+    attributes:
+      label: Provider
+      description: Upstream provider name as configured on the proxy (for example openai).
+      placeholder: openai
+    validations:
+      required: true
+  - type: dropdown
+    id: api
+    attributes:
+      label: API
+      options:
+        - Chat Completions
+        - Responses
+        - Both
+        - Other / not applicable
+    validations:
+      required: true
+  - type: dropdown
+    id: streaming
+    attributes:
+      label: Streaming
+      options:
+        - "Yes"
+        - "No"
+        - Mixed / unknown
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Minimal reproduction
+      description: Smallest `go test` snippet or steps that show the bug. Strip keys and private prompts.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: checkboxes
+    id: secrets
+    attributes:
+      label: Secrets
+      options:
+        - label: I removed keys and private prompts
+          required: true

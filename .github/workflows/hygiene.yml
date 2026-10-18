@@ -1,0 +1,165 @@
+name: Hygiene
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  actionlint:
+    name: actionlint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      # renovate: datasource=github-releases depName=rhysd/actionlint
+      ACTIONLINT_VERSION: v1.7.12
+      # renovate: datasource=pypi depName=check-jsonschema
+      CHECK_JSONSCHEMA_VERSION: 0.38.2
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - name: Install actionlint
+        run: |
+          set -euo pipefail
+          ver="${ACTIONLINT_VERSION#v}"
+          base="https://github.com/rhysd/actionlint/releases/download/${ACTIONLINT_VERSION}"
+          tmp="$(mktemp -d)"
+          (
+            cd "$tmp"
+            curl -fsSL -O "${base}/actionlint_${ver}_linux_amd64.tar.gz"
+            curl -fsSL -O "${base}/actionlint_${ver}_checksums.txt"
+            sha256sum -c --ignore-missing "actionlint_${ver}_checksums.txt"
+            tar -xzf "actionlint_${ver}_linux_amd64.tar.gz" actionlint
+          )
+          sudo mv "$tmp/actionlint" /usr/local/bin/actionlint
+          actionlint -version
+      - name: Run actionlint
+        run: actionlint -color
+      - name: Workflow policy
+        run: ./scripts/check-workflow-policy.sh
+      - name: README badges and repo block
+        run: ./scripts/check-readme.sh
+      - name: Validate issue forms
+        run: |
+          python3 -m venv "${RUNNER_TEMP}/hygiene-venv"
+          "${RUNNER_TEMP}/hygiene-venv/bin/pip" install "check-jsonschema==${CHECK_JSONSCHEMA_VERSION}"
+          "${RUNNER_TEMP}/hygiene-venv/bin/check-jsonschema" --builtin-schema vendor.github-issue-forms .github/ISSUE_TEMPLATE/bug_report.yml
+          "${RUNNER_TEMP}/hygiene-venv/bin/check-jsonschema" --builtin-schema vendor.github-issue-forms .github/ISSUE_TEMPLATE/feature_request.yml
+      - name: Labels file contains release-please labels
+        run: |
+          grep -Fq 'autorelease: pending' .github/labels.yml
+          grep -Fq 'autorelease: tagged' .github/labels.yml
+      - name: No conduct-contact placeholder
+        run: |
+          needle="$(printf '<%s>' 'CONDUCT_CONTACT')"
+          if grep -Rn --exclude-dir=.git "$needle" .; then
+            echo "leftover conduct-contact placeholder" >&2
+            exit 1
+          fi
+
+  pinned-actions:
+    name: pinned-actions
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check pinned actions
+        run: ./scripts/check-pinned-actions.sh
+      - name: Self-test pinned-actions fixtures
+        run: ./scripts/check-pinned-actions.sh --self-test
+
+  renovate-config:
+    name: renovate-config
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      # renovate: datasource=npm depName=renovate
+      RENOVATE_VERSION: 44.167.1
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+      - name: Validate renovate.json
+        run: npx --yes --package "renovate@${RENOVATE_VERSION}" -- renovate-config-validator --strict
+
+  codecov-config:
+    name: codecov-config
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Validate codecov.yml
+        run: curl --fail --data-binary @codecov.yml https://codecov.io/validate
+
+  labels-dry-run:
+    name: labels (dry run)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Labeler dry run
+        uses: crazy-max/ghaction-github-labeler@24d110aa46a59976b8a7f35518cb7f14f434c916 # v5.3.0
+        with:
+          yaml-file: .github/labels.yml
+          skip-delete: true
+          dry-run: true
+
+  release-please-dry-run:
+    name: release-please (dry run)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      # renovate: datasource=npm depName=release-please
+      RELEASE_PLEASE_VERSION: 17.11.2
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+      - name: release-please dry run
+        env:
+          TARGET_BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: |
+          npx --yes "release-please@${RELEASE_PLEASE_VERSION}" release-pr \
+            --dry-run \
+            --repo-url=barzoj-co/llm-test-lab-go \
+            --target-branch="${TARGET_BRANCH}" \
+            --config-file=release-please-config.json \
+            --manifest-file=.release-please-manifest.json \
+            --token=${{ github.token }}
