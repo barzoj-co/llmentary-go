@@ -1,0 +1,34 @@
+name: release-please
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-please
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    name: release-please
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    steps:
+      - uses: googleapis/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071 # v4.4.1
+        id: release
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+      - name: Warm Go module proxy
+        if: ${{ steps.release.outputs.release_created && !github.event.repository.private }}
+        continue-on-error: true
+        run: |
+          tag="${{ steps.release.outputs.tag_name }}"
+          curl -fsSL "https://proxy.golang.org/github.com/barzoj-co/llm-test-lab-go/@v/${tag}.info"

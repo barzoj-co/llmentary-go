@@ -1,0 +1,108 @@
+name: Security
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  codeql-go:
+    name: CodeQL (go)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.26.x"
+          cache: true
+          cache-dependency-path: |
+            go.mod
+            examples/go/go.sum
+            e2e/go.sum
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
+        with:
+          languages: go
+          build-mode: autobuild
+          queries: security-and-quality
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
+        with:
+          category: "/language:go"
+          upload: ${{ github.event.repository.private && 'never' || 'always' }}
+
+  codeql-actions:
+    name: CodeQL (actions)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
+        with:
+          languages: actions
+          build-mode: none
+          queries: security-and-quality
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
+        with:
+          category: "/language:actions"
+          upload: ${{ github.event.repository.private && 'never' || 'always' }}
+
+  govulncheck:
+    name: govulncheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      # renovate: datasource=go depName=golang.org/x/vuln
+      GOVULNCHECK_VERSION: v1.9.0
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.26.x"
+          cache: true
+          cache-dependency-path: |
+            go.mod
+            examples/go/go.sum
+            e2e/go.sum
+      # golang/govulncheck-action@v1.1.0 always installs govulncheck@latest
+      # and has no tags input, so e2e cannot be scanned with -tags=e2e.
+      # Pin the CLI explicitly and run it in each module.
+      - name: Install govulncheck
+        run: go install "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}"
+      - name: govulncheck (root)
+        run: govulncheck ./...
+      - name: govulncheck (examples/go)
+        working-directory: examples/go
+        run: govulncheck ./...
+      - name: govulncheck (e2e)
+        working-directory: e2e
+        run: govulncheck -tags=e2e ./...

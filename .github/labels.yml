@@ -1,0 +1,48 @@
+- name: bug
+  color: "d73a4a"
+  description: Something is not working
+- name: enhancement
+  color: "a2eeef"
+  description: New feature or request
+- name: documentation
+  color: "0075ca"
+  description: Improvements or additions to documentation
+- name: question
+  color: "d876e3"
+  description: Further information is requested
+- name: needs-triage
+  color: "fbca04"
+  description: Needs review from a maintainer
+- name: good first issue
+  color: "7057ff"
+  description: Good for newcomers
+- name: help wanted
+  color: "008672"
+  description: Extra attention is needed
+- name: breaking-change
+  color: "b60205"
+  description: Introduces a breaking change
+- name: security
+  color: "ee0701"
+  description: Security-related
+- name: dependencies
+  color: "0366d6"
+  description: Pull requests that update a dependency
+- name: ci
+  color: "cfd3d7"
+  description: Continuous integration
+- name: "area: assertions"
+  color: "c5def5"
+  description: Assertion helpers
+- name: "area: binary-download"
+  color: "c5def5"
+  description: Proxy binary download and checksums
+- name: "area: session"
+  color: "c5def5"
+  description: Test session and HTTP client
+- name: "autorelease: pending"
+  color: "ededed"
+  description: release-please is preparing a release
+- name: "autorelease: tagged"
+  color: "ededed"
+  description: release-please has tagged a release

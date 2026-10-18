@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security advisory
+    url: https://github.com/barzoj-co/llm-test-lab-go/security/advisories/new
+    about: Privately report a vulnerability in this Go client. Do not file a public issue.
+  - name: Proxy bugs
+    url: https://github.com/barzoj-co/llm-test-lab/issues
+    about: Bugs in the recording proxy binary belong in barzoj-co/llm-test-lab.
+  - name: Questions and ideas
+    url: https://github.com/barzoj-co/llm-test-lab/discussions
+    about: Questions and ideas about llm-test-lab as a whole.
