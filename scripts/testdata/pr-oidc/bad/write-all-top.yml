@@ -1,0 +1,8 @@
+on:
+  pull_request:
+permissions: write-all
+jobs:
+  t:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo ok

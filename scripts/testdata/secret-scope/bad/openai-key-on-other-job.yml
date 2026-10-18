@@ -1,0 +1,10 @@
+# expect: OPENAI_API_KEY is reserved for job e2e
+on: push
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - name: OpenAI e2e tests
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: go test ./...

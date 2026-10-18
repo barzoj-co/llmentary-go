@@ -1,0 +1,18 @@
+title = "llm-test-lab-go"
+
+[extend]
+useDefault = true
+
+# Narrow regex-only entries. gitleaks treats allowlist `paths` as a whole-file
+# skip, which would hide real keys under README.md / docs / e2e. Pairing is
+# therefore done in the regex, not as a directory allowlist.
+
+# Placeholder ellipsis used in README/docs examples; not a credential.
+[[allowlists]]
+description = "Placeholder OpenAI key ellipsis in README and docs (not a credential)"
+regexes = ['''sk-\.\.\.''']
+
+# Synthetic 401-test value; expected only in e2e/.
+[[allowlists]]
+description = "Synthetic invalid OpenAI key used in e2e 401 tests"
+regexes = ['''sk-invalid[A-Za-z0-9_-]*''']

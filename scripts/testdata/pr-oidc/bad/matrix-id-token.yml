@@ -1,0 +1,14 @@
+on:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    permissions:
+      id-token: write
+    steps:
+      - run: echo ok

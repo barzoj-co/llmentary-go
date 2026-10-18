@@ -1,0 +1,10 @@
+on:
+  workflow_call:
+permissions:
+  id-token: write
+jobs:
+  upload:
+    if: github.repository == 'someone/else'
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo ok

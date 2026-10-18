@@ -47,12 +47,18 @@ CI also runs `golangci-lint` (pinned version, not `latest`).
 Workflow and docs hygiene (run from the repository root):
 
 ```bash
-# Requires actionlint and shellcheck on PATH
+# Requires actionlint, shellcheck, python3+PyYAML, and gitleaks on PATH
 actionlint
 
 ./scripts/check-pinned-actions.sh
 ./scripts/check-pinned-actions.sh --self-test
 ./scripts/check-workflow-policy.sh
+./scripts/check-secret-scope.sh
+./scripts/check-secret-scope.sh --self-test
+./scripts/check-pr-oidc.sh
+./scripts/check-pr-oidc.sh --self-test
+./scripts/e2e-gate.sh --self-test
+./scripts/check-gitleaks-config.sh --self-test
 ./scripts/check-readme.sh
 ./scripts/check-mit-docs.sh
 ```
@@ -82,6 +88,19 @@ are not tagged.
 
 Coverage is **informational**. Codecov comments and status checks must not fail a
 PR (project and patch are `informational: true`).
+
+## CI secrets and the e2e gate
+
+Secrets stay off workflow- and job-level `env:`. `OPENAI_API_KEY` is injected
+only into the live `OpenAI e2e tests` step; `LLMTESTLAB_REPO_TOKEN` is only the
+`actions/checkout` token for the private proxy. The live `e2e` job uses the
+`openai-e2e` GitHub Actions environment. Maintainers approve that environment
+deployment on each pull request (and on `push` to `main`) before the paid
+OpenAI suite runs. Integration and mock-upstream tests do not use the
+environment and do not wait for approval. Fork PRs skip `e2e`; `e2e-gate`
+fails until a maintainer pushes the same commits to a same-repo branch. See
+[docs/ci.md](docs/ci.md) for the known `pull_request` merge-commit limitation.
+Never use `pull_request_target`.
 
 ## Renovate
 

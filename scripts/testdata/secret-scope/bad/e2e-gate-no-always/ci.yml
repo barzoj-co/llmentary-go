@@ -1,0 +1,14 @@
+# expect: missing or malformed e2e-gate job
+on: pull_request
+jobs:
+  e2e:
+    environment: openai-e2e
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo ok
+  e2e-gate:
+    if: success()
+    needs: [e2e]
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo ok
