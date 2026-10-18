@@ -6,11 +6,13 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 E2E_JOB="e2e"
+E2E_ENVIRONMENT="openai-e2e"
+OPENAI_SECRET="OPENAI_API_KEY"
 SELF_TEST=0
 PATHS=()
 
 usage() {
-  echo "usage: $0 [--e2e-job ID] [--self-test] [path ...]" >&2
+  echo "usage: $0 [--e2e-job ID] [--e2e-environment NAME] [--openai-secret NAME] [--self-test] [path ...]" >&2
   exit 2
 }
 
@@ -19,6 +21,16 @@ while [[ $# -gt 0 ]]; do
     --e2e-job)
       [[ $# -ge 2 ]] || usage
       E2E_JOB="$2"
+      shift 2
+      ;;
+    --e2e-environment)
+      [[ $# -ge 2 ]] || usage
+      E2E_ENVIRONMENT="$2"
+      shift 2
+      ;;
+    --openai-secret)
+      [[ $# -ge 2 ]] || usage
+      OPENAI_SECRET="$2"
       shift 2
       ;;
     --self-test)
@@ -47,8 +59,8 @@ if [[ "${SELF_TEST}" -eq 1 && ${#PATHS[@]} -ne 0 ]]; then
   usage
 fi
 
-export E2E_JOB SELF_TEST ROOT
-python3 - "$ROOT" "$E2E_JOB" "$SELF_TEST" "${PATHS[@]+"${PATHS[@]}"}" <<'PY'
+export E2E_JOB E2E_ENVIRONMENT OPENAI_SECRET SELF_TEST ROOT
+python3 - "$ROOT" "$E2E_JOB" "$E2E_ENVIRONMENT" "$OPENAI_SECRET" "$SELF_TEST" "${PATHS[@]+"${PATHS[@]}"}" <<'PY'
 from __future__ import annotations
 
 import pathlib
@@ -59,8 +71,10 @@ import yaml
 
 root = pathlib.Path(sys.argv[1])
 e2e_job = sys.argv[2]
-self_test = sys.argv[3] == "1"
-cli_paths = [pathlib.Path(p) for p in sys.argv[4:]]
+e2e_environment = sys.argv[3]
+openai_secret = sys.argv[4]
+self_test = sys.argv[5] == "1"
+cli_paths = [pathlib.Path(p) for p in sys.argv[6:]]
 
 INSTALL_NEEDLES = (
     "npm ci",
@@ -186,6 +200,28 @@ def is_checkout_uses(value: str | None) -> bool:
     return bool(value) and value.startswith("actions/checkout@")
 
 
+def job_environment(job_node):
+    _, env_node = mapping_get(job_node, "environment")
+    if env_node is None:
+        return None, None
+    if isinstance(env_node, yaml.ScalarNode):
+        return env_node.value, env_node
+    if isinstance(env_node, yaml.MappingNode):
+        _, name_node = mapping_get(env_node, "name")
+        if name_node is not None:
+            return scalar(name_node), name_node
+    return None, env_node
+
+
+def openai_secret_hits(job_node):
+    needle = f"secrets.{openai_secret}"
+    hits = []
+    for s in walk_strings(job_node):
+        if s.value and needle in s.value:
+            hits.append(s)
+    return hits
+
+
 def job_needs_list(needs_node) -> list[str]:
     if needs_node is None:
         return []
@@ -249,10 +285,43 @@ def check_file(path: pathlib.Path) -> list[str]:
                 line = line_of(gate)
             errors.append(f"{rel}:{line}: missing or malformed e2e-gate job")
 
+        live = jobs.get(e2e_job)
+        env_name, env_node = job_environment(live) if live is not None else (None, None)
+        if env_name != e2e_environment:
+            line = 1
+            if env_node is not None:
+                line = line_of(env_node)
+            elif live is not None:
+                line = line_of(live)
+            errors.append(
+                f"{rel}:{line}: missing or malformed environment {e2e_environment} on job {e2e_job}"
+            )
+
     return errors
 
 
 def check_job(rel: str, job_id: str, job_node, errors: list[str]) -> None:
+    env_name, env_node = job_environment(job_node)
+    if job_id != e2e_job:
+        if env_name == e2e_environment:
+            errors.append(
+                f"{rel}:{line_of(env_node)}: environment {e2e_environment} is reserved for job {e2e_job}"
+            )
+        for hit in openai_secret_hits(job_node):
+            errors.append(
+                f"{rel}:{line_of(hit)}: {openai_secret} is reserved for job {e2e_job}"
+            )
+    elif (
+        env_name != e2e_environment
+        and openai_secret_hits(job_node)
+        and not rel.endswith("ci.yml")
+        and not rel.endswith("ci.yaml")
+    ):
+        line = line_of(env_node) if env_node is not None else line_of(job_node)
+        errors.append(
+            f"{rel}:{line}: missing or malformed environment {e2e_environment} on job {e2e_job}"
+        )
+
     _, secrets_node = mapping_get(job_node, "secrets")
     if secrets_node is not None:
         if isinstance(secrets_node, yaml.ScalarNode) and secrets_node.value == "inherit":

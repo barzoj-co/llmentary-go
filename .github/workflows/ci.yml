@@ -136,9 +136,8 @@ jobs:
 
   e2e:
     name: e2e
-    # To require maintainer approval for live e2e, add one line here:
-    #   environment: openai-e2e
-    # after Denis creates that environment with its protection rules and moves OPENAI_API_KEY into it.
+    # Required reviewers are configured on this environment; integration does not use it.
+    environment: openai-e2e
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:

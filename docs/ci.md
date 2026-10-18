@@ -7,10 +7,12 @@ Workflows live under `.github/workflows/`. The main pipeline is `ci.yml`:
 - `integration`: non-fork pull requests and pushes to `main`; builds the proxy
   from `barzoj-co/llm-test-lab` with `secrets.LLMTESTLAB_REPO_TOKEN`, runs the
   mock-upstream example, uploads `coverage-integration.out` tokenless
-- `e2e`: same event filter as `integration`; builds the proxy, downloads and
-  compiles the e2e module without secrets, then runs the live OpenAI suite
+- `e2e`: same event filter as `integration`; uses the `openai-e2e` environment
+  so each live run waits for maintainer approval; builds the proxy, downloads
+  and compiles the e2e module without secrets, then runs the live OpenAI suite
 - `e2e-gate`: always runs; green only when `e2e` succeeded. This is the check
-  to require, not `e2e` itself (a skipped required check is treated as passing)
+  to require, not `e2e` itself (a skipped required check is treated as passing).
+  A rejected or timed-out environment approval makes `e2e-gate` red.
 
 TODO: switch the proxy checkout to checksum-verified GitHub Release binaries via
 `llmtestlab.DownloadRelease` when `barzoj-co/llm-test-lab` is public.
@@ -27,17 +29,10 @@ stay on the `e2e` job. `LLMTESTLAB_REPO_TOKEN` is only passed as
 `OPENAI_API_KEY` is only in the step `env:` of `OpenAI e2e tests`. Presence
 checks use the boolean form (`secrets.X != ''`), never `$OPENAI_API_KEY`.
 
-`e2e` is not a matrix. To require maintainer approval for live OpenAI calls,
-add one line directly above `runs-on:` after the environment exists:
-
-```yaml
-#   environment: openai-e2e
-```
-
-Do not add `environment:` until that environment is created with protection
-rules and `OPENAI_API_KEY` is moved into it (referencing a name auto-creates an
-unprotected environment). If an approval is later rejected or times out, `e2e`
-does not succeed and `e2e-gate` goes red. That is intended.
+`e2e` is not a matrix. Only that job sets `environment: openai-e2e`. Unit,
+integration, and mock-upstream tests do not, so they run without approval.
+`OPENAI_API_KEY` must not appear on any other job. If an approval is rejected
+or times out, `e2e` does not succeed and `e2e-gate` goes red. That is intended.
 
 Fork pull requests skip `e2e` (no secrets). `e2e-gate` then fails with
 `live e2e did not run; a maintainer must run it`. A maintainer reviews the
