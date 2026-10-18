@@ -261,14 +261,20 @@ func extractZipBinary(body []byte, wanted map[string]bool) ([]byte, error) {
 		if strings.Contains(f.Name, "..") || !wanted[name] {
 			continue
 		}
+		if f.UncompressedSize64 > maxArchiveBytes {
+			return nil, fmt.Errorf("llmtestlab: binary %s is too large", name)
+		}
 		rc, err := f.Open()
 		if err != nil {
 			return nil, err
 		}
-		data, err := io.ReadAll(io.LimitReader(rc, maxArchiveBytes))
+		data, err := io.ReadAll(io.LimitReader(rc, maxArchiveBytes+1))
 		_ = rc.Close()
 		if err != nil {
 			return nil, err
+		}
+		if int64(len(data)) > maxArchiveBytes {
+			return nil, fmt.Errorf("llmtestlab: binary %s is too large", name)
 		}
 		return data, nil
 	}
