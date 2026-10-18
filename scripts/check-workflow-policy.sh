@@ -51,7 +51,7 @@ def job_kind(job_id: str, job_name: str) -> str:
         return "scorecard"
     if name in {"test", "e2e"}:
         return "coverage"
-    if name == "release-please":
+    if name in {"release-please", "release-please (dry run)"}:
         return "release-please"
     if name == "labels (dry run)":
         return "labels-dry"

@@ -20,6 +20,15 @@
     "schedule": ["before 7am on monday"],
     "automerge": true
   },
+  "ignorePaths": [
+    "**/node_modules/**",
+    "**/bower_components/**",
+    "**/vendor/**",
+    "**/__tests__/**",
+    "**/test/**",
+    "**/tests/**",
+    "**/__fixtures__/**"
+  ],
   "postUpdateOptions": ["gomodTidy"],
   "packageRules": [
     {

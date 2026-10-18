@@ -139,8 +139,11 @@ jobs:
     name: release-please (dry run)
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # GraphQL needs pull-request access; same set as the real release-please job.
     permissions:
-      contents: read
+      contents: write
+      pull-requests: write
+      issues: write
     env:
       # renovate: datasource=npm depName=release-please
       RELEASE_PLEASE_VERSION: 17.11.2
