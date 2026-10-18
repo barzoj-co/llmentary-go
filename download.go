@@ -1,0 +1,310 @@
+// SPDX-License-Identifier: MIT
+
+package llmtestlab
+
+import (
+	"archive/tar"
+	"archive/zip"
+	"bytes"
+	"compress/gzip"
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"os"
+	"path"
+	"path/filepath"
+	"runtime"
+	"strings"
+)
+
+const (
+	defaultReleaseRepo = "barzoj-co/llm-test-lab"
+	checksumsName      = "checksums.txt"
+	maxArchiveBytes    = 80 << 20
+)
+
+// DownloadOptions selects a GitHub Release of barzoj-co/llm-test-lab and
+// installs the proxy binary after verifying its checksum.
+//
+// Releases may not exist yet while the proxy repository is private; the
+// helper is still useful for pinning a version once they are published.
+type DownloadOptions struct {
+	// Version is a release tag such as v0.1.0. The leading v is optional.
+	Version string
+	// DestDir is the directory that will contain the extracted binary.
+	DestDir string
+	// Repo is "owner/name". Defaults to barzoj-co/llm-test-lab.
+	Repo string
+	// Token is an optional GitHub token for private releases.
+	// When empty, LLMTESTLAB_GITHUB_TOKEN, GH_TOKEN, GITHUB_TOKEN, then
+	// LLMTESTLAB_REPO_TOKEN are consulted.
+	Token string
+	// HTTPClient defaults to http.DefaultClient.
+	HTTPClient *http.Client
+	// BaseURL overrides GitHub download URLs. Intended for tests.
+	// When set, assets are fetched from BaseURL/{tag}/{filename}.
+	BaseURL string
+	// GOOS and GOARCH override runtime.GOOS/GOARCH.
+	GOOS   string
+	GOARCH string
+}
+
+// DownloadRelease downloads a pinned llm-test-lab release archive, verifies
+// its SHA-256 against checksums.txt, and extracts the binary as llm-test-lab
+// (or llm-test-lab.exe on Windows).
+func DownloadRelease(ctx context.Context, opts DownloadOptions) (string, error) {
+	if strings.TrimSpace(opts.Version) == "" {
+		return "", errors.New("llmtestlab: DownloadRelease requires Version")
+	}
+	if strings.TrimSpace(opts.DestDir) == "" {
+		return "", errors.New("llmtestlab: DownloadRelease requires DestDir")
+	}
+	repo := opts.Repo
+	if repo == "" {
+		repo = defaultReleaseRepo
+	}
+	goos := opts.GOOS
+	if goos == "" {
+		goos = runtime.GOOS
+	}
+	goarch := opts.GOARCH
+	if goarch == "" {
+		goarch = runtime.GOARCH
+	}
+	tag, version := normalizeReleaseVersion(opts.Version)
+	archiveName := releaseArchiveName(version, goos, goarch)
+	client := opts.HTTPClient
+	if client == nil {
+		client = http.DefaultClient
+	}
+	token := strings.TrimSpace(opts.Token)
+	// Do not send ambient GitHub tokens to a custom BaseURL (tests / mirrors).
+	if token == "" && strings.TrimSpace(opts.BaseURL) == "" {
+		token = firstNonEmpty(os.Getenv("LLMTESTLAB_GITHUB_TOKEN"), os.Getenv("GH_TOKEN"), os.Getenv("GITHUB_TOKEN"), os.Getenv("LLMTESTLAB_REPO_TOKEN"))
+	}
+
+	archiveURL := releaseAssetURL(opts.BaseURL, repo, tag, archiveName)
+	sumsURL := releaseAssetURL(opts.BaseURL, repo, tag, checksumsName)
+
+	sumsBody, err := httpGetBytes(ctx, client, sumsURL, token, 1<<20)
+	if err != nil {
+		return "", fmt.Errorf("llmtestlab: download checksums: %w", err)
+	}
+	wantSum, err := checksumForFile(sumsBody, archiveName)
+	if err != nil {
+		return "", err
+	}
+
+	archiveBody, err := httpGetBytes(ctx, client, archiveURL, token, maxArchiveBytes)
+	if err != nil {
+		return "", fmt.Errorf("llmtestlab: download archive %s: %w", archiveName, err)
+	}
+	got := sha256.Sum256(archiveBody)
+	gotHex := hex.EncodeToString(got[:])
+	if !strings.EqualFold(gotHex, wantSum) {
+		return "", fmt.Errorf("llmtestlab: checksum mismatch for %s: got %s want %s", archiveName, gotHex, wantSum)
+	}
+
+	if err := os.MkdirAll(opts.DestDir, 0o755); err != nil {
+		return "", err
+	}
+	outName := BinaryName
+	if goos == "windows" {
+		outName += ".exe"
+	}
+	outPath := filepath.Join(opts.DestDir, outName)
+	data, err := extractReleaseBinary(archiveName, archiveBody)
+	if err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(outPath, data, 0o755); err != nil {
+		return "", err
+	}
+	return outPath, nil
+}
+
+func normalizeReleaseVersion(raw string) (tag, version string) {
+	raw = strings.TrimSpace(raw)
+	version = strings.TrimPrefix(raw, "v")
+	tag = "v" + version
+	return tag, version
+}
+
+func releaseArchiveName(version, goos, goarch string) string {
+	ext := ".tar.gz"
+	if goos == "windows" {
+		ext = ".zip"
+	}
+	return "llm-test-lab_" + version + "_" + goos + "_" + goarch + ext
+}
+
+func releaseAssetURL(base, repo, tag, name string) string {
+	if base != "" {
+		return strings.TrimRight(base, "/") + "/" + tag + "/" + name
+	}
+	return "https://github.com/" + repo + "/releases/download/" + tag + "/" + name
+}
+
+func httpGetBytes(ctx context.Context, client *http.Client, rawURL, token string, limit int64) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	req.Header.Set("Accept", "application/octet-stream")
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 2048))
+		return nil, fmt.Errorf("GET %s: status=%d", redactedURL(rawURL), resp.StatusCode)
+	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > limit {
+		return nil, fmt.Errorf("GET %s: response exceeds %d bytes", redactedURL(rawURL), limit)
+	}
+	return data, nil
+}
+
+func checksumForFile(sums []byte, filename string) (string, error) {
+	lines := strings.Split(string(sums), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+		sum, file := fields[0], fields[len(fields)-1]
+		file = strings.TrimPrefix(file, "*")
+		if path.Base(file) == filename {
+			if len(sum) != 64 {
+				return "", fmt.Errorf("llmtestlab: unexpected checksum length for %s", filename)
+			}
+			return strings.ToLower(sum), nil
+		}
+	}
+	return "", fmt.Errorf("llmtestlab: no checksum entry for %s", filename)
+}
+
+func extractReleaseBinary(archiveName string, body []byte) ([]byte, error) {
+	wanted := map[string]bool{
+		goreleaserBinaryName:          true,
+		goreleaserBinaryName + ".exe": true,
+		BinaryName:                    true,
+		BinaryName + ".exe":           true,
+	}
+	if strings.HasSuffix(archiveName, ".zip") {
+		return extractZipBinary(body, wanted)
+	}
+	return extractTarGzBinary(body, wanted)
+}
+
+func extractTarGzBinary(body []byte, wanted map[string]bool) ([]byte, error) {
+	gr, err := gzip.NewReader(bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("llmtestlab: gunzip archive: %w", err)
+	}
+	defer func() { _ = gr.Close() }()
+	tr := tar.NewReader(gr)
+	for {
+		hdr, err := tr.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+		if hdr.Typeflag != tar.TypeReg {
+			continue
+		}
+		name := path.Base(filepath.ToSlash(hdr.Name))
+		if strings.Contains(hdr.Name, "..") || !wanted[name] {
+			continue
+		}
+		if hdr.Size > maxArchiveBytes {
+			return nil, fmt.Errorf("llmtestlab: binary %s is too large", name)
+		}
+		data, err := io.ReadAll(io.LimitReader(tr, hdr.Size))
+		if err != nil {
+			return nil, err
+		}
+		return data, nil
+	}
+	return nil, errors.New("llmtestlab: archive did not contain llm-test-lab or llmtestlab")
+}
+
+func extractZipBinary(body []byte, wanted map[string]bool) ([]byte, error) {
+	zr, err := zip.NewReader(bytes.NewReader(body), int64(len(body)))
+	if err != nil {
+		return nil, fmt.Errorf("llmtestlab: unzip archive: %w", err)
+	}
+	for _, f := range zr.File {
+		if f.FileInfo().IsDir() {
+			continue
+		}
+		name := path.Base(filepath.ToSlash(f.Name))
+		if strings.Contains(f.Name, "..") || !wanted[name] {
+			continue
+		}
+		if f.UncompressedSize64 > maxArchiveBytes {
+			return nil, fmt.Errorf("llmtestlab: binary %s is too large", name)
+		}
+		rc, err := f.Open()
+		if err != nil {
+			return nil, err
+		}
+		data, err := io.ReadAll(io.LimitReader(rc, maxArchiveBytes+1))
+		_ = rc.Close()
+		if err != nil {
+			return nil, err
+		}
+		if int64(len(data)) > maxArchiveBytes {
+			return nil, fmt.Errorf("llmtestlab: binary %s is too large", name)
+		}
+		return data, nil
+	}
+	return nil, errors.New("llmtestlab: zip did not contain llm-test-lab or llmtestlab")
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if strings.TrimSpace(v) != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+func redactedURL(rawURL string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		if i := strings.Index(rawURL, "?"); i >= 0 {
+			rawURL = rawURL[:i]
+		}
+		if at := strings.LastIndex(rawURL, "@"); at >= 0 {
+			if scheme := strings.Index(rawURL, "://"); scheme >= 0 && scheme < at {
+				return rawURL[:scheme+3] + rawURL[at+1:]
+			}
+		}
+		return rawURL
+	}
+	u.User = nil
+	u.RawQuery = ""
+	u.Fragment = ""
+	return u.String()
+}

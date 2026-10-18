@@ -1,0 +1,8 @@
+bin/
+dist/
+/llm-test-lab
+*.exe
+*.test
+coverage.out
+.idea/
+.vscode/
