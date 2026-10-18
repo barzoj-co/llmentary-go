@@ -1,0 +1,10 @@
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  t:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    steps:
+      - run: echo ok

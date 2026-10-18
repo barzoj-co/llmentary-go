@@ -1,0 +1,9 @@
+# expect: pull_request_target is forbidden
+on: pull_request_target
+permissions:
+  contents: read
+jobs:
+  t:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo ok

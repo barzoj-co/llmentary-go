@@ -1,0 +1,13 @@
+on: push
+jobs:
+  t:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require secrets
+        env:
+          HAS_OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY != '' }}
+        run: echo "present=${HAS_OPENAI_API_KEY}"
+      - name: OpenAI e2e tests
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: go test -tags=e2e ./...

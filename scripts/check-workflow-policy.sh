@@ -27,11 +27,15 @@ ALLOWED = {
         "security-events": {"write"},
         "id-token": {"write"},
     },
-    "coverage": {"contents": {"read"}, "id-token": {"write"}},
     "release-please": {
         "contents": {"write"},
         "pull-requests": {"write"},
         "issues": {"write"},
+    },
+    "release-please-dry": {
+        "contents": {"read"},
+        "pull-requests": {"read"},
+        "issues": {"read"},
     },
     "labels": {"contents": {"read"}, "issues": {"write"}},
     "labels-dry": {"contents": {"read"}, "issues": {"read"}},
@@ -49,9 +53,9 @@ def job_kind(job_id: str, job_name: str) -> str:
         return "codeql"
     if name == "Scorecard":
         return "scorecard"
-    if name in {"test", "e2e"}:
-        return "coverage"
-    if name in {"release-please", "release-please (dry run)"}:
+    if name == "release-please (dry run)":
+        return "release-please-dry"
+    if name == "release-please":
         return "release-please"
     if name == "labels (dry run)":
         return "labels-dry"

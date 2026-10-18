@@ -57,9 +57,19 @@ jobs:
       - name: Validate issue forms
         run: |
           python3 -m venv "${RUNNER_TEMP}/hygiene-venv"
-          "${RUNNER_TEMP}/hygiene-venv/bin/pip" install "check-jsonschema==${CHECK_JSONSCHEMA_VERSION}"
+          "${RUNNER_TEMP}/hygiene-venv/bin/pip" install \
+            "check-jsonschema==${CHECK_JSONSCHEMA_VERSION}" \
+            "PyYAML==6.0.2"
           "${RUNNER_TEMP}/hygiene-venv/bin/check-jsonschema" --builtin-schema vendor.github-issue-forms .github/ISSUE_TEMPLATE/bug_report.yml
           "${RUNNER_TEMP}/hygiene-venv/bin/check-jsonschema" --builtin-schema vendor.github-issue-forms .github/ISSUE_TEMPLATE/feature_request.yml
+      - name: Secret-scope, PR OIDC, and e2e-gate policies
+        run: |
+          PATH="${RUNNER_TEMP}/hygiene-venv/bin:${PATH}"
+          ./scripts/check-secret-scope.sh
+          ./scripts/check-secret-scope.sh --self-test
+          ./scripts/check-pr-oidc.sh
+          ./scripts/check-pr-oidc.sh --self-test
+          ./scripts/e2e-gate.sh --self-test
       - name: Labels file contains release-please labels
         run: |
           grep -Fq 'autorelease: pending' .github/labels.yml
@@ -142,11 +152,10 @@ jobs:
     if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # GraphQL needs pull-request access; same set as the real release-please job.
     permissions:
-      contents: write
-      pull-requests: write
-      issues: write
+      contents: read
+      pull-requests: read
+      issues: read
     env:
       # renovate: datasource=npm depName=release-please
       RELEASE_PLEASE_VERSION: 17.11.2
@@ -161,11 +170,13 @@ jobs:
       - name: release-please dry run
         env:
           TARGET_BRANCH: ${{ github.head_ref || github.ref_name }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           npx --yes "release-please@${RELEASE_PLEASE_VERSION}" release-pr \
             --dry-run \
+            --skip-labeling \
             --repo-url=barzoj-co/llm-test-lab-go \
             --target-branch="${TARGET_BRANCH}" \
             --config-file=release-please-config.json \
             --manifest-file=.release-please-manifest.json \
-            --token=${{ github.token }}
+            --token="${GITHUB_TOKEN}"
