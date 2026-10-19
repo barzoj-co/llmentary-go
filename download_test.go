@@ -109,6 +109,11 @@ func TestDownloadReleaseUsesLlmentaryGithubToken(t *testing.T) {
 	archive, sum := testTarGz(t, "llmentary", []byte("payload"))
 	wantArchive := "llmentary_0.1.0_linux_amd64.tar.gz"
 	oldArchive := "llm-test-lab_0.1.0_linux_amd64.tar.gz"
+	meta := []byte(`{"tag_name":"v0.1.0","assets":[` +
+		`{"name":"checksums.txt","url":"https://api.github.com/repos/barzoj-co/llmentary/releases/assets/1"},` +
+		`{"name":"` + wantArchive + `","url":"https://api.github.com/repos/barzoj-co/llmentary/releases/assets/2"},` +
+		`{"name":"` + oldArchive + `","url":"https://api.github.com/repos/barzoj-co/llmentary/releases/assets/3"}` +
+		`]}`)
 
 	var gotURLs []string
 	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
@@ -116,16 +121,25 @@ func TestDownloadReleaseUsesLlmentaryGithubToken(t *testing.T) {
 		if auth := req.Header.Get("Authorization"); auth != "Bearer from-llmentary" {
 			t.Errorf("Authorization=%q", auth)
 		}
+		if ua := req.Header.Get("User-Agent"); ua != "llmentary-go" {
+			t.Errorf("User-Agent=%q", ua)
+		}
 		body := []byte("not found")
 		status := http.StatusNotFound
 		switch {
-		case strings.HasSuffix(req.URL.Path, "/checksums.txt"):
+		case req.URL.Path == "/repos/barzoj-co/llmentary/releases/tags/v0.1.0":
+			if req.Header.Get("Accept") != "application/vnd.github+json" {
+				t.Errorf("Accept=%q", req.Header.Get("Accept"))
+			}
+			body = meta
+			status = http.StatusOK
+		case strings.HasSuffix(req.URL.Path, "/releases/assets/1"):
 			body = []byte(sum + "  " + wantArchive + "\n" + sum + "  " + oldArchive + "\n")
 			status = http.StatusOK
-		case strings.HasSuffix(req.URL.Path, "/"+wantArchive):
+		case strings.HasSuffix(req.URL.Path, "/releases/assets/2"):
 			body = archive
 			status = http.StatusOK
-		case strings.Contains(req.URL.Path, oldArchive):
+		case strings.Contains(req.URL.Path, oldArchive) || strings.HasSuffix(req.URL.Path, "/releases/assets/3"):
 			t.Errorf("fetched old archive name %s", req.URL)
 		}
 		return &http.Response{
@@ -150,14 +164,17 @@ func TestDownloadReleaseUsesLlmentaryGithubToken(t *testing.T) {
 		t.Fatalf("extracted name=%q", path)
 	}
 	if len(gotURLs) == 0 {
-		t.Fatal("expected GitHub download URLs")
+		t.Fatal("expected GitHub API URLs")
 	}
 	for _, raw := range gotURLs {
 		if strings.Contains(raw, "llm-test-lab") {
 			t.Fatalf("old name in download URL %s", raw)
 		}
-		if !strings.Contains(raw, "https://github.com/barzoj-co/llmentary/releases/download/v0.1.0/") {
-			t.Fatalf("expected default repo URL, got %s", raw)
+		if !strings.Contains(raw, "https://api.github.com/repos/barzoj-co/llmentary/") {
+			t.Fatalf("expected GitHub API URL, got %s", raw)
+		}
+		if strings.Contains(raw, "/releases/download/") {
+			t.Fatalf("private download should not use browser URL %s", raw)
 		}
 	}
 }
