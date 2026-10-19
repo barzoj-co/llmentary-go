@@ -31,4 +31,4 @@ jobs:
         continue-on-error: true
         run: |
           tag="${{ steps.release.outputs.tag_name }}"
-          curl -fsSL "https://proxy.golang.org/github.com/barzoj-co/llm-test-lab-go/@v/${tag}.info"
+          curl -fsSL "https://proxy.golang.org/github.com/barzoj-co/llmentary-go/@v/${tag}.info"

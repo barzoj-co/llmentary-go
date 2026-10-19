@@ -1,9 +1,9 @@
-module github.com/barzoj-co/llm-test-lab-go/e2e
+module github.com/barzoj-co/llmentary-go/e2e
 
 go 1.22
 
 require (
-	github.com/barzoj-co/llm-test-lab-go v0.0.0
+	github.com/barzoj-co/llmentary-go v0.0.0
 	github.com/openai/openai-go v1.12.0
 )
 
@@ -14,4 +14,4 @@ require (
 	github.com/tidwall/sjson v1.2.5 // indirect
 )
 
-replace github.com/barzoj-co/llm-test-lab-go => ..
+replace github.com/barzoj-co/llmentary-go => ..

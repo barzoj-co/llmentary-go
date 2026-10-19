@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 
-package llmtestlab
+package llmentary
 
 import (
 	"bytes"
@@ -21,50 +21,41 @@ import (
 )
 
 const (
-	// BinaryName is the PATH name used by language clients.
-	BinaryName = "llm-test-lab"
+	// BinaryName is the PATH name and the file name inside GitHub Release archives.
+	BinaryName = "llmentary"
 	// EnvBin is the environment variable that overrides binary resolution.
-	EnvBin = "LLMTESTLAB_BIN"
-	// goreleaserBinaryName is the file name inside GitHub Release archives.
-	goreleaserBinaryName = "llmtestlab"
+	EnvBin = "LLMENTARY_BIN"
 )
 
-// ResolveBinary returns the llm-test-lab proxy executable.
+// ResolveBinary returns the llmentary proxy executable.
 //
 // Resolution order:
-//  1. LLMTESTLAB_BIN, if set (must exist and be executable-looking)
-//  2. llm-test-lab on PATH
-//  3. llmtestlab on PATH (GoReleaser / `go install` binary name)
+//  1. LLMENTARY_BIN, if set (must exist and be executable-looking)
+//  2. llmentary on PATH (GitHub Releases / `go install` name)
 func ResolveBinary() (string, error) {
 	if override := strings.TrimSpace(os.Getenv(EnvBin)); override != "" {
 		path, err := filepath.Abs(override)
 		if err != nil {
-			return "", fmt.Errorf("LLMTESTLAB_BIN %q: %w", override, err)
+			return "", fmt.Errorf("LLMENTARY_BIN %q: %w", override, err)
 		}
 		info, err := os.Stat(path)
 		if err != nil {
-			return "", fmt.Errorf("LLMTESTLAB_BIN %q: %w", override, err)
+			return "", fmt.Errorf("LLMENTARY_BIN %q: %w", override, err)
 		}
 		if info.IsDir() {
-			return "", fmt.Errorf("LLMTESTLAB_BIN %q is a directory", override)
+			return "", fmt.Errorf("LLMENTARY_BIN %q is a directory", override)
 		}
 		return path, nil
 	}
 	if path, err := exec.LookPath(BinaryName); err == nil {
 		return path, nil
 	}
-	if path, err := exec.LookPath(goreleaserBinaryName); err == nil {
-		return path, nil
-	}
 	if runtime.GOOS == "windows" {
 		if path, err := exec.LookPath(BinaryName + ".exe"); err == nil {
 			return path, nil
 		}
-		if path, err := exec.LookPath(goreleaserBinaryName + ".exe"); err == nil {
-			return path, nil
-		}
 	}
-	return "", fmt.Errorf("llm-test-lab binary not found: set %s or install %s on PATH (see https://github.com/barzoj-co/llm-test-lab)", EnvBin, BinaryName)
+	return "", fmt.Errorf("llmentary binary not found: set %s or install %s on PATH (see https://github.com/barzoj-co/llmentary)", EnvBin, BinaryName)
 }
 
 type startConfig struct {
@@ -155,7 +146,7 @@ func (s *syncedBuffer) String() string {
 	return s.b.String()
 }
 
-// Proxy is a running llm-test-lab proxy process started by this client.
+// Proxy is a running llmentary proxy process started by this client.
 type Proxy struct {
 	Bin        string
 	ProxyURL   string
@@ -174,7 +165,7 @@ func Start(ctx context.Context, opts ...StartOption) (*Proxy, error) {
 		opt(&cfg)
 	}
 	if len(cfg.upstreams) == 0 {
-		return nil, errors.New("llmtestlab: Start requires at least one WithUpstream mapping")
+		return nil, errors.New("llmentary: Start requires at least one WithUpstream mapping")
 	}
 	bin := cfg.bin
 	if bin == "" {
@@ -221,7 +212,7 @@ func Start(ctx context.Context, opts ...StartOption) (*Proxy, error) {
 	cmd.Stdout = io.MultiWriter(stdout, discardIfNil(cfg.stdout))
 	cmd.Stderr = io.MultiWriter(stderr, discardIfNil(cfg.stderr))
 	if err := cmd.Start(); err != nil {
-		return nil, fmt.Errorf("llmtestlab: start %s: %w", bin, err)
+		return nil, fmt.Errorf("llmentary: start %s: %w", bin, err)
 	}
 
 	p := &Proxy{
@@ -245,7 +236,7 @@ func Start(ctx context.Context, opts ...StartOption) (*Proxy, error) {
 	}
 	if err := waitHealthy(waitCtx, httpClient, p.ControlURL+"/healthz", cfg.controlToken); err != nil {
 		_ = p.Stop()
-		return nil, fmt.Errorf("llmtestlab: proxy did not become healthy: %w\nstdout:\n%s\nstderr:\n%s", err, stdout.String(), stderr.String())
+		return nil, fmt.Errorf("llmentary: proxy did not become healthy: %w\nstdout:\n%s\nstderr:\n%s", err, stdout.String(), stderr.String())
 	}
 	return p, nil
 }
@@ -257,11 +248,11 @@ func StartForTest(t testing.TB, opts ...StartOption) *Proxy {
 	defer cancel()
 	p, err := Start(ctx, opts...)
 	if err != nil {
-		t.Fatalf("llmtestlab: start proxy: %v", err)
+		t.Fatalf("llmentary: start proxy: %v", err)
 	}
 	t.Cleanup(func() {
 		if err := p.Stop(); err != nil {
-			t.Errorf("llmtestlab: stop proxy: %v", err)
+			t.Errorf("llmentary: stop proxy: %v", err)
 		}
 	})
 	return p

@@ -4,13 +4,13 @@
 
 Report vulnerabilities **privately** through GitHub private vulnerability reporting:
 
-https://github.com/barzoj-co/llm-test-lab-go/security/advisories/new
+https://github.com/barzoj-co/llmentary-go/security/advisories/new
 
 Do **not** open a public issue, discussion, or pull request about an unfixed vulnerability.
 
 Private reporting becomes available once this repository is public. Until then, only people with access to the repository can open a draft advisory.
 
-Proxy (binary / server) vulnerabilities belong in [`barzoj-co/llm-test-lab`](https://github.com/barzoj-co/llm-test-lab/security/advisories/new), not here.
+Proxy (binary / server) vulnerabilities belong in [`barzoj-co/llmentary`](https://github.com/barzoj-co/llmentary/security/advisories/new), not here.
 
 ## Supported versions
 
@@ -21,12 +21,12 @@ Only the latest `0.x` minor of this Go module is supported.
 In scope for this repository:
 
 - Binary download and checksum verification (`DownloadRelease`)
-- Handling of `LLMTESTLAB_*` tokens and environment variables
+- Handling of `LLMENTARY_*` tokens and environment variables
 - The control-API client used from tests
 
 Out of scope:
 
-- The proxy binary and its HTTP surface (report those to `barzoj-co/llm-test-lab`)
+- The proxy binary and its HTTP surface (report those to `barzoj-co/llmentary`)
 - Upstream LLM providers
 - Secrets you paste into issues, logs, or traces
 

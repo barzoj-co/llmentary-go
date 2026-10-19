@@ -4,7 +4,7 @@ permissions:
   contents: read
 jobs:
   upload:
-    if: github.repository == 'barzoj-co/llm-test-lab-go'
+    if: github.repository == 'barzoj-co/llmentary-go'
     runs-on: ubuntu-latest
     permissions:
       id-token: write

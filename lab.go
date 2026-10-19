@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 
-package llmtestlab
+package llmentary
 
 import (
 	"bytes"
@@ -46,8 +46,8 @@ type labConfig struct {
 func New(t testing.TB, opts ...LabOption) *Lab {
 	t.Helper()
 	cfg := labConfig{
-		controlURL: getenvDefault("LLMTESTLAB_CONTROL_URL", defaultControlURL),
-		proxyURL:   getenvDefault("LLMTESTLAB_PROXY_URL", defaultProxyURL),
+		controlURL: getenvDefault("LLMENTARY_CONTROL_URL", defaultControlURL),
+		proxyURL:   getenvDefault("LLMENTARY_PROXY_URL", defaultProxyURL),
 		quiet:      500 * time.Millisecond,
 		timeout:    30 * time.Second,
 	}
@@ -63,7 +63,7 @@ func New(t testing.TB, opts ...LabOption) *Lab {
 	}
 	client, err := NewClient(cfg.controlURL, clientOpts...)
 	if err != nil {
-		t.Fatalf("llmtestlab: create client: %v", err)
+		t.Fatalf("llmentary: create client: %v", err)
 	}
 	lab := &Lab{
 		t:          t,
@@ -117,7 +117,7 @@ func (l *Lab) Headers() http.Header {
 }
 
 func (l *Lab) Baggage() string {
-	return "llmtestlab.session.id=" + url.QueryEscape(l.sessionID)
+	return "llmentary.session.id=" + url.QueryEscape(l.sessionID)
 }
 
 func (l *Lab) BaseURL(upstream string) string {
@@ -160,7 +160,7 @@ func (l *Lab) Wait(ctx context.Context) Trace {
 	l.t.Helper()
 	calls, err := l.client.Wait(ctx, l.sessionID, l.quiet, l.timeout)
 	if err != nil {
-		l.t.Fatalf("llmtestlab: wait for session %s: %v", l.sessionID, err)
+		l.t.Fatalf("llmentary: wait for session %s: %v", l.sessionID, err)
 	}
 	return Trace{SessionID: l.sessionID, Calls: calls}
 }
@@ -169,7 +169,7 @@ func (l *Lab) Calls(ctx context.Context) Trace {
 	l.t.Helper()
 	calls, err := l.client.Calls(ctx, l.sessionID)
 	if err != nil {
-		l.t.Fatalf("llmtestlab: fetch session %s: %v", l.sessionID, err)
+		l.t.Fatalf("llmentary: fetch session %s: %v", l.sessionID, err)
 	}
 	return Trace{SessionID: l.sessionID, Calls: calls}
 }

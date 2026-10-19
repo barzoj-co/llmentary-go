@@ -5,7 +5,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-REPO="barzoj-co/llm-test-lab-go"
+REPO="barzoj-co/llmentary-go"
 SELF_TEST=0
 PATHS=()
 

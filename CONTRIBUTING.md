@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for working on `llm-test-lab-go`.
+Thanks for working on `llmentary-go`.
 
 Please follow the [Code of Conduct](CODE_OF_CONDUCT.md). To report a vulnerability
 in this client, see [SECURITY.md](SECURITY.md). Do not open a public issue for
@@ -9,7 +9,7 @@ either.
 ## Requirements
 
 - Go 1.22 or newer (CI uses 1.26.x to match the proxy).
-- The proxy from [barzoj-co/llm-test-lab](https://github.com/barzoj-co/llm-test-lab)
+- The proxy from [barzoj-co/llmentary](https://github.com/barzoj-co/llmentary)
   for integration and e2e tests.
 
 ## Local checks
@@ -20,7 +20,7 @@ Unit tests (no proxy binary):
 go test ./...
 ```
 
-Integration example (needs `llm-test-lab` on PATH or `LLMTESTLAB_BIN`):
+Integration example (needs `llmentary` on PATH or `LLMENTARY_BIN`):
 
 ```bash
 (cd examples/go && go test ./...)
@@ -68,13 +68,13 @@ Install `actionlint` from the [rhysd/actionlint releases](https://github.com/rhy
 
 ## Layout
 
-- Root module `github.com/barzoj-co/llm-test-lab-go`, package `llmtestlab`
+- Root module `github.com/barzoj-co/llmentary-go`, package `llmentary`
 - `examples/go` — proxy-backed example against a mock upstream
 - `e2e` — real OpenAI Chat Completions and Responses flows
 - `docs/go-client.md` — assertion and session API
 
 The client talks to the proxy over HTTP only. Do not import proxy/server packages
-from `barzoj-co/llm-test-lab`.
+from `barzoj-co/llmentary`.
 
 ## Pull requests
 

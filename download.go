@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 
-package llmtestlab
+package llmentary
 
 import (
 	"archive/tar"
@@ -23,12 +23,12 @@ import (
 )
 
 const (
-	defaultReleaseRepo = "barzoj-co/llm-test-lab"
+	defaultReleaseRepo = "barzoj-co/llmentary"
 	checksumsName      = "checksums.txt"
 	maxArchiveBytes    = 80 << 20
 )
 
-// DownloadOptions selects a GitHub Release of barzoj-co/llm-test-lab and
+// DownloadOptions selects a GitHub Release of barzoj-co/llmentary and
 // installs the proxy binary after verifying its checksum.
 //
 // Releases may not exist yet while the proxy repository is private; the
@@ -38,10 +38,10 @@ type DownloadOptions struct {
 	Version string
 	// DestDir is the directory that will contain the extracted binary.
 	DestDir string
-	// Repo is "owner/name". Defaults to barzoj-co/llm-test-lab.
+	// Repo is "owner/name". Defaults to barzoj-co/llmentary.
 	Repo string
 	// Token is an optional GitHub token for private releases.
-	// When empty, LLMTESTLAB_GITHUB_TOKEN, GH_TOKEN, GITHUB_TOKEN, then
+	// When empty, LLMENTARY_GITHUB_TOKEN, GH_TOKEN, GITHUB_TOKEN, then
 	// LLMTESTLAB_REPO_TOKEN are consulted.
 	Token string
 	// HTTPClient defaults to http.DefaultClient.
@@ -54,15 +54,15 @@ type DownloadOptions struct {
 	GOARCH string
 }
 
-// DownloadRelease downloads a pinned llm-test-lab release archive, verifies
-// its SHA-256 against checksums.txt, and extracts the binary as llm-test-lab
-// (or llm-test-lab.exe on Windows).
+// DownloadRelease downloads a pinned llmentary release archive, verifies
+// its SHA-256 against checksums.txt, and extracts the binary as llmentary
+// (or llmentary.exe on Windows).
 func DownloadRelease(ctx context.Context, opts DownloadOptions) (string, error) {
 	if strings.TrimSpace(opts.Version) == "" {
-		return "", errors.New("llmtestlab: DownloadRelease requires Version")
+		return "", errors.New("llmentary: DownloadRelease requires Version")
 	}
 	if strings.TrimSpace(opts.DestDir) == "" {
-		return "", errors.New("llmtestlab: DownloadRelease requires DestDir")
+		return "", errors.New("llmentary: DownloadRelease requires DestDir")
 	}
 	repo := opts.Repo
 	if repo == "" {
@@ -85,7 +85,7 @@ func DownloadRelease(ctx context.Context, opts DownloadOptions) (string, error) 
 	token := strings.TrimSpace(opts.Token)
 	// Do not send ambient GitHub tokens to a custom BaseURL (tests / mirrors).
 	if token == "" && strings.TrimSpace(opts.BaseURL) == "" {
-		token = firstNonEmpty(os.Getenv("LLMTESTLAB_GITHUB_TOKEN"), os.Getenv("GH_TOKEN"), os.Getenv("GITHUB_TOKEN"), os.Getenv("LLMTESTLAB_REPO_TOKEN"))
+		token = firstNonEmpty(os.Getenv("LLMENTARY_GITHUB_TOKEN"), os.Getenv("GH_TOKEN"), os.Getenv("GITHUB_TOKEN"), os.Getenv("LLMTESTLAB_REPO_TOKEN"))
 	}
 
 	archiveURL := releaseAssetURL(opts.BaseURL, repo, tag, archiveName)
@@ -93,7 +93,7 @@ func DownloadRelease(ctx context.Context, opts DownloadOptions) (string, error) 
 
 	sumsBody, err := httpGetBytes(ctx, client, sumsURL, token, 1<<20)
 	if err != nil {
-		return "", fmt.Errorf("llmtestlab: download checksums: %w", err)
+		return "", fmt.Errorf("llmentary: download checksums: %w", err)
 	}
 	wantSum, err := checksumForFile(sumsBody, archiveName)
 	if err != nil {
@@ -102,12 +102,12 @@ func DownloadRelease(ctx context.Context, opts DownloadOptions) (string, error) 
 
 	archiveBody, err := httpGetBytes(ctx, client, archiveURL, token, maxArchiveBytes)
 	if err != nil {
-		return "", fmt.Errorf("llmtestlab: download archive %s: %w", archiveName, err)
+		return "", fmt.Errorf("llmentary: download archive %s: %w", archiveName, err)
 	}
 	got := sha256.Sum256(archiveBody)
 	gotHex := hex.EncodeToString(got[:])
 	if !strings.EqualFold(gotHex, wantSum) {
-		return "", fmt.Errorf("llmtestlab: checksum mismatch for %s: got %s want %s", archiveName, gotHex, wantSum)
+		return "", fmt.Errorf("llmentary: checksum mismatch for %s: got %s want %s", archiveName, gotHex, wantSum)
 	}
 
 	if err := os.MkdirAll(opts.DestDir, 0o755); err != nil {
@@ -140,7 +140,7 @@ func releaseArchiveName(version, goos, goarch string) string {
 	if goos == "windows" {
 		ext = ".zip"
 	}
-	return "llm-test-lab_" + version + "_" + goos + "_" + goarch + ext
+	return "llmentary_" + version + "_" + goos + "_" + goarch + ext
 }
 
 func releaseAssetURL(base, repo, tag, name string) string {
@@ -193,20 +193,18 @@ func checksumForFile(sums []byte, filename string) (string, error) {
 		file = strings.TrimPrefix(file, "*")
 		if path.Base(file) == filename {
 			if len(sum) != 64 {
-				return "", fmt.Errorf("llmtestlab: unexpected checksum length for %s", filename)
+				return "", fmt.Errorf("llmentary: unexpected checksum length for %s", filename)
 			}
 			return strings.ToLower(sum), nil
 		}
 	}
-	return "", fmt.Errorf("llmtestlab: no checksum entry for %s", filename)
+	return "", fmt.Errorf("llmentary: no checksum entry for %s", filename)
 }
 
 func extractReleaseBinary(archiveName string, body []byte) ([]byte, error) {
 	wanted := map[string]bool{
-		goreleaserBinaryName:          true,
-		goreleaserBinaryName + ".exe": true,
-		BinaryName:                    true,
-		BinaryName + ".exe":           true,
+		BinaryName:          true,
+		BinaryName + ".exe": true,
 	}
 	if strings.HasSuffix(archiveName, ".zip") {
 		return extractZipBinary(body, wanted)
@@ -217,7 +215,7 @@ func extractReleaseBinary(archiveName string, body []byte) ([]byte, error) {
 func extractTarGzBinary(body []byte, wanted map[string]bool) ([]byte, error) {
 	gr, err := gzip.NewReader(bytes.NewReader(body))
 	if err != nil {
-		return nil, fmt.Errorf("llmtestlab: gunzip archive: %w", err)
+		return nil, fmt.Errorf("llmentary: gunzip archive: %w", err)
 	}
 	defer func() { _ = gr.Close() }()
 	tr := tar.NewReader(gr)
@@ -237,7 +235,7 @@ func extractTarGzBinary(body []byte, wanted map[string]bool) ([]byte, error) {
 			continue
 		}
 		if hdr.Size > maxArchiveBytes {
-			return nil, fmt.Errorf("llmtestlab: binary %s is too large", name)
+			return nil, fmt.Errorf("llmentary: binary %s is too large", name)
 		}
 		data, err := io.ReadAll(io.LimitReader(tr, hdr.Size))
 		if err != nil {
@@ -245,13 +243,13 @@ func extractTarGzBinary(body []byte, wanted map[string]bool) ([]byte, error) {
 		}
 		return data, nil
 	}
-	return nil, errors.New("llmtestlab: archive did not contain llm-test-lab or llmtestlab")
+	return nil, errors.New("llmentary: archive did not contain llmentary")
 }
 
 func extractZipBinary(body []byte, wanted map[string]bool) ([]byte, error) {
 	zr, err := zip.NewReader(bytes.NewReader(body), int64(len(body)))
 	if err != nil {
-		return nil, fmt.Errorf("llmtestlab: unzip archive: %w", err)
+		return nil, fmt.Errorf("llmentary: unzip archive: %w", err)
 	}
 	for _, f := range zr.File {
 		if f.FileInfo().IsDir() {
@@ -262,7 +260,7 @@ func extractZipBinary(body []byte, wanted map[string]bool) ([]byte, error) {
 			continue
 		}
 		if f.UncompressedSize64 > maxArchiveBytes {
-			return nil, fmt.Errorf("llmtestlab: binary %s is too large", name)
+			return nil, fmt.Errorf("llmentary: binary %s is too large", name)
 		}
 		rc, err := f.Open()
 		if err != nil {
@@ -274,11 +272,11 @@ func extractZipBinary(body []byte, wanted map[string]bool) ([]byte, error) {
 			return nil, err
 		}
 		if int64(len(data)) > maxArchiveBytes {
-			return nil, fmt.Errorf("llmtestlab: binary %s is too large", name)
+			return nil, fmt.Errorf("llmentary: binary %s is too large", name)
 		}
 		return data, nil
 	}
-	return nil, errors.New("llmtestlab: zip did not contain llm-test-lab or llmtestlab")
+	return nil, errors.New("llmentary: zip did not contain llmentary")
 }
 
 func firstNonEmpty(values ...string) string {

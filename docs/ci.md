@@ -5,7 +5,7 @@ Workflows live under `.github/workflows/`. The main pipeline is `ci.yml`:
 - `lint`: `go vet` and a pinned `golangci-lint`
 - `test`: unit tests (`go test ./...`) and tokenless Codecov upload (`unit`)
 - `integration`: non-fork pull requests and pushes to `main`; builds the proxy
-  from `barzoj-co/llm-test-lab` with `secrets.LLMTESTLAB_REPO_TOKEN`, runs the
+  from `barzoj-co/llmentary` with `secrets.LLMTESTLAB_REPO_TOKEN`, runs the
   mock-upstream example, uploads `coverage-integration.out` tokenless
 - `e2e`: same event filter as `integration`; uses the `openai-e2e` environment
   so each live run waits for maintainer approval; builds the proxy, downloads
@@ -15,7 +15,7 @@ Workflows live under `.github/workflows/`. The main pipeline is `ci.yml`:
   A rejected or timed-out environment approval makes `e2e-gate` red.
 
 TODO: switch the proxy checkout to checksum-verified GitHub Release binaries via
-`llmtestlab.DownloadRelease` when `barzoj-co/llm-test-lab` is public.
+`llmentary.DownloadRelease` when `barzoj-co/llmentary` is public.
 
 The e2e tests fail (they do not skip) when `OPENAI_API_KEY` is unset so missing
 credentials are visible. CI prints the `=== RUN` / `--- PASS` lines so the
@@ -25,7 +25,7 @@ executed test names are visible in the log. Secret values are never printed.
 
 No secret is set at workflow or job level. `OPENAI_E2E_MODEL` (a variable) may
 stay on the `e2e` job. `LLMTESTLAB_REPO_TOKEN` is only passed as
-`with: token:` on the `actions/checkout` step for `barzoj-co/llm-test-lab`.
+`with: token:` on the `actions/checkout` step for `barzoj-co/llmentary`.
 `OPENAI_API_KEY` is only in the step `env:` of `OpenAI e2e tests`. Presence
 checks use the boolean form (`secrets.X != ''`), never `$OPENAI_API_KEY`.
 

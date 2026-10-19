@@ -316,7 +316,7 @@ header is present and integer-valued.
 The Go client can count or exclude retries:
 
 ```go
-assert.CallCount(1, llmtestlab.ExcludeRetries())
+assert.CallCount(1, llmentary.ExcludeRetries())
 assert.Retries(0)
 assert.NoRetries()
 ```

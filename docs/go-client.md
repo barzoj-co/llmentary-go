@@ -1,29 +1,29 @@
 # Go testing client
 
-The Go module `github.com/barzoj-co/llm-test-lab-go` (package `llmtestlab`) provides the
+The Go module `github.com/barzoj-co/llmentary-go` (package `llmentary`) provides the
 test-facing API for deterministic LLM integration tests. It never uses an LLM judge.
 Assertions run against calls recorded by the local proxy.
 
 The library is MIT-licensed. It talks to the proxy over HTTP and does not import
-proxy/server packages from [barzoj-co/llm-test-lab](https://github.com/barzoj-co/llm-test-lab).
+proxy/server packages from [barzoj-co/llmentary](https://github.com/barzoj-co/llmentary).
 
 Related references:
 
 - [Recorded trace data model](data-model.md)
-- [Proxy, providers, and OTel](https://github.com/barzoj-co/llm-test-lab) in the main repository
+- [Proxy, providers, and OTel](https://github.com/barzoj-co/llmentary) in the main repository
 
 ## Session per test
 
 ```go
 func TestAgent(t *testing.T) {
-    lab := llmtestlab.New(t,
-        llmtestlab.WithProxyURL("http://127.0.0.1:7777"),
-        llmtestlab.WithControlURL("http://127.0.0.1:7778"),
+    lab := llmentary.New(t,
+        llmentary.WithProxyURL("http://127.0.0.1:7777"),
+        llmentary.WithControlURL("http://127.0.0.1:7778"),
     )
 
     baseURL := lab.OpenAIBaseURL("openai") // http://127.0.0.1:7777/u/openai
     key, value := lab.Header()             // X-Test-Session: <unique id>
-    baggage := lab.Baggage()               // llmtestlab.session.id=<id>
+    baggage := lab.Baggage()               // llmentary.session.id=<id>
     httpClient := lab.HTTPClient()         // injects X-Test-Session
 
     _, _, _ = baseURL, key, value
@@ -36,9 +36,9 @@ func TestAgent(t *testing.T) {
 
 `New(t)` registers `t.Cleanup` to delete the session from the proxy. It reads defaults from:
 
-- `LLMTESTLAB_PROXY_URL` (default `http://127.0.0.1:7777`)
-- `LLMTESTLAB_CONTROL_URL` (default `http://127.0.0.1:7778`)
-- `LLMTESTLAB_CONTROL_TOKEN` for authenticated control APIs
+- `LLMENTARY_PROXY_URL` (default `http://127.0.0.1:7777`)
+- `LLMENTARY_CONTROL_URL` (default `http://127.0.0.1:7778`)
+- `LLMENTARY_CONTROL_TOKEN` for authenticated control APIs
 
 Use `lab.Check(ctx)` for non-fatal assertions (`t.Error`) and `lab.Expect(ctx)` for fatal
 assertions (`t.Fatal`).
@@ -79,9 +79,9 @@ assert.ToolCalled("get_weather")
 assert.ToolNotCalled("delete_user")
 assert.ToolCalledTimes("get_weather", 1)
 assert.ToolCalled("get_weather",
-    llmtestlab.ArgsSubset(map[string]any{"city": "Paris"}),
-    llmtestlab.ArgPath("unit", "celsius"),
-    llmtestlab.ArgsMatch(func(raw json.RawMessage) error { return nil }),
+    llmentary.ArgsSubset(map[string]any{"city": "Paris"}),
+    llmentary.ArgPath("unit", "celsius"),
+    llmentary.ArgsMatch(func(raw json.RawMessage) error { return nil }),
 )
 assert.ToolOrder("get_weather", "summarize")
 assert.ToolBefore("get_weather", "summarize")
@@ -105,7 +105,7 @@ assert.TokensBelow(1000)
 assert.TokensAtMost(1000)
 assert.LatencyBelow(2 * time.Second)
 assert.TTFTBelow(500 * time.Millisecond)
-assert.CallCount(1, llmtestlab.ExcludeRetries())
+assert.CallCount(1, llmentary.ExcludeRetries())
 assert.Retries(0)
 assert.NoRetries()
 assert.NoErrors()
@@ -151,11 +151,11 @@ for custom assertions.
 ## Binary resolution
 
 ```go
-path, err := llmtestlab.ResolveBinary()
-proxy, err := llmtestlab.Start(ctx, llmtestlab.WithUpstream("openai=https://api.openai.com/v1"))
+path, err := llmentary.ResolveBinary()
+proxy, err := llmentary.Start(ctx, llmentary.WithUpstream("openai=https://api.openai.com/v1"))
 ```
 
-`ResolveBinary` uses `LLMTESTLAB_BIN`, then `llm-test-lab` on PATH, then `llmtestlab`.
+`ResolveBinary` uses `LLMENTARY_BIN`, then `llmentary` on PATH.
 `DownloadRelease` can install a pinned GitHub Release after verifying `checksums.txt`.
 
 ## Two-step tool flows
@@ -188,4 +188,4 @@ proxy-backed example using `openai-go` with `lab.OpenAIBaseURL("openai")` and
 upstream.
 
 For CI wiring, see [GitHub Actions and CI](ci.md). For proxy flags and control API
-details, see the [llm-test-lab documentation](https://github.com/barzoj-co/llm-test-lab).
+details, see the [llmentary documentation](https://github.com/barzoj-co/llmentary).

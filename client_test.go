@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 
-package llmtestlab
+package llmentary
 
 import (
 	"context"

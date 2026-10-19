@@ -175,7 +175,7 @@ jobs:
           npx --yes "release-please@${RELEASE_PLEASE_VERSION}" release-pr \
             --dry-run \
             --skip-labeling \
-            --repo-url=barzoj-co/llm-test-lab-go \
+            --repo-url=barzoj-co/llmentary-go \
             --target-branch="${TARGET_BRANCH}" \
             --config-file=release-please-config.json \
             --manifest-file=.release-please-manifest.json \

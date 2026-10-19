@@ -5,6 +5,6 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          repository: barzoj-co/llm-test-lab
+          repository: barzoj-co/llmentary
           token: ${{ secrets.LLMTESTLAB_REPO_TOKEN }}
           persist-credentials: false

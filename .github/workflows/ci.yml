@@ -91,16 +91,16 @@ jobs:
             exit 1
           fi
 
-      # TODO: switch to GitHub Release binaries from barzoj-co/llm-test-lab
-      # (checksum-verified via llmtestlab.DownloadRelease) when that repository
+      # TODO: switch to GitHub Release binaries from barzoj-co/llmentary
+      # (checksum-verified via llmentary.DownloadRelease) when that repository
       # is public. Until then, build the proxy from source like the Python/JS
       # clients: checkout with secrets.LLMTESTLAB_REPO_TOKEN.
-      - name: Checkout llm-test-lab proxy source
+      - name: Checkout llmentary proxy source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: barzoj-co/llm-test-lab
+          repository: barzoj-co/llmentary
           token: ${{ secrets.LLMTESTLAB_REPO_TOKEN }}
-          path: llm-test-lab
+          path: llmentary
           persist-credentials: false
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -110,19 +110,19 @@ jobs:
           cache-dependency-path: |
             go.mod
             examples/go/go.mod
-            llm-test-lab/go.mod
+            llmentary/go.mod
 
       - name: Build proxy from source
-        working-directory: llm-test-lab
+        working-directory: llmentary
         run: |
           mkdir -p "$GITHUB_WORKSPACE/bin"
-          CGO_ENABLED=0 go build -o "$GITHUB_WORKSPACE/bin/llm-test-lab" ./cmd/llmtestlab
+          CGO_ENABLED=0 go build -o "$GITHUB_WORKSPACE/bin/llmentary" ./cmd/llmentary
           echo "$GITHUB_WORKSPACE/bin" >> "$GITHUB_PATH"
 
       - name: Integration tests (proxy + mock upstream)
         env:
-          LLMTESTLAB_BIN: ${{ github.workspace }}/bin/llm-test-lab
-        run: go test -v -count=1 -covermode=atomic -coverpkg=github.com/barzoj-co/llm-test-lab-go/... -coverprofile="${GITHUB_WORKSPACE}/coverage-integration.out" ./...
+          LLMENTARY_BIN: ${{ github.workspace }}/bin/llmentary
+        run: go test -v -count=1 -covermode=atomic -coverpkg=github.com/barzoj-co/llmentary-go/... -coverprofile="${GITHUB_WORKSPACE}/coverage-integration.out" ./...
         working-directory: examples/go
 
       - name: Upload integration coverage
@@ -166,16 +166,16 @@ jobs:
             exit 1
           fi
 
-      # TODO: switch to GitHub Release binaries from barzoj-co/llm-test-lab
-      # (checksum-verified via llmtestlab.DownloadRelease) when that repository
+      # TODO: switch to GitHub Release binaries from barzoj-co/llmentary
+      # (checksum-verified via llmentary.DownloadRelease) when that repository
       # is public. Until then, build the proxy from source like the Python/JS
       # clients: checkout with secrets.LLMTESTLAB_REPO_TOKEN.
-      - name: Checkout llm-test-lab proxy source
+      - name: Checkout llmentary proxy source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: barzoj-co/llm-test-lab
+          repository: barzoj-co/llmentary
           token: ${{ secrets.LLMTESTLAB_REPO_TOKEN }}
-          path: llm-test-lab
+          path: llmentary
           persist-credentials: false
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -186,13 +186,13 @@ jobs:
             go.mod
             examples/go/go.mod
             e2e/go.mod
-            llm-test-lab/go.mod
+            llmentary/go.mod
 
       - name: Build proxy from source
-        working-directory: llm-test-lab
+        working-directory: llmentary
         run: |
           mkdir -p "$GITHUB_WORKSPACE/bin"
-          CGO_ENABLED=0 go build -o "$GITHUB_WORKSPACE/bin/llm-test-lab" ./cmd/llmtestlab
+          CGO_ENABLED=0 go build -o "$GITHUB_WORKSPACE/bin/llmentary" ./cmd/llmentary
           echo "$GITHUB_WORKSPACE/bin" >> "$GITHUB_PATH"
 
       - name: Download e2e modules
@@ -208,7 +208,7 @@ jobs:
       - name: OpenAI e2e tests
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          LLMTESTLAB_BIN: ${{ github.workspace }}/bin/llm-test-lab
+          LLMENTARY_BIN: ${{ github.workspace }}/bin/llmentary
         run: |
           set +e
           go test -v -tags=e2e -count=1 ./... | tee "${RUNNER_TEMP}/e2e.log"

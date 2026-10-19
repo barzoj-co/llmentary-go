@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 
-package llmtestlab
+package llmentary
 
 import (
 	"os"
@@ -34,7 +34,7 @@ func TestResolveBinaryEnvOverride(t *testing.T) {
 func TestResolveBinaryEnvOverrideMissing(t *testing.T) {
 	t.Setenv(EnvBin, filepath.Join(t.TempDir(), "does-not-exist"))
 	if _, err := ResolveBinary(); err == nil {
-		t.Fatal("expected error for missing LLMTESTLAB_BIN")
+		t.Fatal("expected error for missing LLMENTARY_BIN")
 	}
 }
 

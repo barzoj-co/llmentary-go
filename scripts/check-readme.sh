@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Fail if required README badges or the canonical ltl-repos block are missing.
+# Fail if required README badges or the canonical llmentary-repos block are missing.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -11,12 +11,12 @@ if [[ ! -f "$README" ]]; then
 fi
 
 badges=(
-  '[![CI](https://github.com/barzoj-co/llm-test-lab-go/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/barzoj-co/llm-test-lab-go/actions/workflows/ci.yml)'
-  '[![codecov](https://codecov.io/gh/barzoj-co/llm-test-lab-go/graph/badge.svg)](https://codecov.io/gh/barzoj-co/llm-test-lab-go)'
-  '[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/barzoj-co/llm-test-lab-go/badge)](https://scorecard.dev/viewer/?uri=github.com/barzoj-co/llm-test-lab-go)'
-  '[![License: MIT](https://img.shields.io/github/license/barzoj-co/llm-test-lab-go)](LICENSE)'
-  '[![Go Reference](https://pkg.go.dev/badge/github.com/barzoj-co/llm-test-lab-go.svg)](https://pkg.go.dev/github.com/barzoj-co/llm-test-lab-go)'
-  '[![Release](https://img.shields.io/github/v/release/barzoj-co/llm-test-lab-go?sort=semver)](https://github.com/barzoj-co/llm-test-lab-go/releases)'
+  '[![CI](https://github.com/barzoj-co/llmentary-go/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/barzoj-co/llmentary-go/actions/workflows/ci.yml)'
+  '[![codecov](https://codecov.io/gh/barzoj-co/llmentary-go/graph/badge.svg)](https://codecov.io/gh/barzoj-co/llmentary-go)'
+  '[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/barzoj-co/llmentary-go/badge)](https://scorecard.dev/viewer/?uri=github.com/barzoj-co/llmentary-go)'
+  '[![License: MIT](https://img.shields.io/github/license/barzoj-co/llmentary-go)](LICENSE)'
+  '[![Go Reference](https://pkg.go.dev/badge/github.com/barzoj-co/llmentary-go.svg)](https://pkg.go.dev/github.com/barzoj-co/llmentary-go)'
+  '[![Release](https://img.shields.io/github/v/release/barzoj-co/llmentary-go?sort=semver)](https://github.com/barzoj-co/llmentary-go/releases)'
 )
 
 missing=0
@@ -27,20 +27,20 @@ for b in "${badges[@]}"; do
   fi
 done
 
-canonical_block='<!-- ltl-repos:start -->
-## llm-test-lab repositories
+canonical_block='<!-- llmentary-repos:start -->
+## llmentary repositories
 
 | Repository | What |
 |---|---|
-| [llm-test-lab](https://github.com/barzoj-co/llm-test-lab) | Recording proxy binary (Go) |
-| [llm-test-lab-go](https://github.com/barzoj-co/llm-test-lab-go) | Go client for `go test` |
-| [llm-test-lab-python](https://github.com/barzoj-co/llm-test-lab-python) | Python client and pytest plugin |
-| [llm-test-lab-js](https://github.com/barzoj-co/llm-test-lab-js) | TypeScript/JavaScript client for Vitest and Jest |
-<!-- ltl-repos:end -->'
+| [llmentary](https://github.com/barzoj-co/llmentary) | Recording proxy binary (Go) |
+| [llmentary-go](https://github.com/barzoj-co/llmentary-go) | Go client for `go test` |
+| [llmentary-python](https://github.com/barzoj-co/llmentary-python) | Python client and pytest plugin |
+| [llmentary-js](https://github.com/barzoj-co/llmentary-js) | TypeScript/JavaScript client for Vitest and Jest |
+<!-- llmentary-repos:end -->'
 
 readme_content="$(<"$README")"
 if [[ "$readme_content" != *"$canonical_block"* ]]; then
-  echo "README.md missing or altered canonical ltl-repos block" >&2
+  echo "README.md missing or altered canonical llmentary-repos block" >&2
   missing=1
 fi
 
@@ -56,4 +56,4 @@ if [[ "$missing" -ne 0 ]]; then
   exit 1
 fi
 
-echo "README badges and ltl-repos block OK"
+echo "README badges and llmentary-repos block OK"

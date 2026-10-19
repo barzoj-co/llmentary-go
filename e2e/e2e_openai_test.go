@@ -2,7 +2,7 @@
 
 //go:build e2e
 
-package llmtestlab_test
+package llmentary_test
 
 import (
 	"bytes"
@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/barzoj-co/llm-test-lab-go"
+	"github.com/barzoj-co/llmentary-go"
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
 	"github.com/openai/openai-go/packages/param"
@@ -67,7 +67,7 @@ func TestE2EChatCompletionsToolFlow(t *testing.T) {
 	assert := testLab.Expect(ctx)
 	chat := assert.Trace().Query().APIType("chat").Expect(t)
 	chat.CallCount(2)
-	chat.ToolCalled("echo_city", llmtestlab.ArgsSubset(map[string]any{"city": "Paris"}))
+	chat.ToolCalled("echo_city", llmentary.ArgsSubset(map[string]any{"city": "Paris"}))
 	chat.ToolResultFedBack(toolCall.ID)
 	chat.FinishReason("stop")
 	chat.ResponseContains("Paris")
@@ -138,7 +138,7 @@ func TestE2EResponsesToolFlow(t *testing.T) {
 	assert := testLab.Expect(finalCtx)
 	responses := assert.Trace().Query().APIType("responses").Expect(t)
 	responses.CallCount(2)
-	responses.ToolCalled("echo_city", llmtestlab.ArgsSubset(map[string]any{"city": "Paris"}))
+	responses.ToolCalled("echo_city", llmentary.ArgsSubset(map[string]any{"city": "Paris"}))
 	responses.ToolResultFedBack(toolCallID)
 	responses.FinishReason("stop")
 	responses.ResponseContains("Paris")
@@ -193,7 +193,7 @@ func TestE2EChatCompletionsNonStreaming(t *testing.T) {
 	assert := testLab.Expect(finalCtx)
 	assert.CallCount(2)
 	chat := assert.Trace().Query().APIType("chat").Expect(t)
-	chat.ToolCalled("echo_city", llmtestlab.ArgsSubset(map[string]any{"city": "Paris"}))
+	chat.ToolCalled("echo_city", llmentary.ArgsSubset(map[string]any{"city": "Paris"}))
 	chat.ToolResultFedBack(toolCall.ID)
 	chat.FinishReason("stop")
 	chat.ResponseContains("Paris")
@@ -209,7 +209,7 @@ func requireOpenAIKey(t *testing.T) string {
 	return apiKey
 }
 
-func postOpenAI(t *testing.T, apiKey string, lab *llmtestlab.Lab, path string, body []byte) []byte {
+func postOpenAI(t *testing.T, apiKey string, lab *llmentary.Lab, path string, body []byte) []byte {
 	t.Helper()
 	req, err := http.NewRequest(http.MethodPost, lab.OpenAIBaseURL("openai")+path, bytes.NewReader(body))
 	if err != nil {
@@ -234,19 +234,19 @@ func postOpenAI(t *testing.T, apiKey string, lab *llmtestlab.Lab, path string, b
 	return stream
 }
 
-func newE2ELab(t *testing.T) *llmtestlab.Lab {
+func newE2ELab(t *testing.T) *llmentary.Lab {
 	t.Helper()
-	if _, err := llmtestlab.ResolveBinary(); err != nil {
-		t.Fatalf("llm-test-lab proxy binary is required for e2e: %v", err)
+	if _, err := llmentary.ResolveBinary(); err != nil {
+		t.Fatalf("llmentary proxy binary is required for e2e: %v", err)
 	}
-	proxy := llmtestlab.StartForTest(t,
-		llmtestlab.WithUpstream("openai=https://api.openai.com/v1"),
-		llmtestlab.WithStartTimeout(15*time.Second),
+	proxy := llmentary.StartForTest(t,
+		llmentary.WithUpstream("openai=https://api.openai.com/v1"),
+		llmentary.WithStartTimeout(15*time.Second),
 	)
-	return llmtestlab.New(t,
-		llmtestlab.WithProxyURL(proxy.ProxyURL),
-		llmtestlab.WithControlURL(proxy.ControlURL),
-		llmtestlab.WithWait(200*time.Millisecond, 30*time.Second),
+	return llmentary.New(t,
+		llmentary.WithProxyURL(proxy.ProxyURL),
+		llmentary.WithControlURL(proxy.ControlURL),
+		llmentary.WithWait(200*time.Millisecond, 30*time.Second),
 	)
 }
 
