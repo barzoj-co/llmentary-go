@@ -87,21 +87,9 @@ jobs:
         run: |
           echo "LLMTESTLAB_REPO_TOKEN present: ${HAS_REPO_TOKEN}"
           if [ "${HAS_REPO_TOKEN}" != "true" ]; then
-            echo "::error::LLMTESTLAB_REPO_TOKEN is required to build the proxy from source"
+            echo "::error::LLMTESTLAB_REPO_TOKEN is required to download the pinned proxy release"
             exit 1
           fi
-
-      # TODO: switch to GitHub Release binaries from barzoj-co/llmentary
-      # (checksum-verified via llmentary.DownloadRelease) when that repository
-      # is public. Until then, build the proxy from source like the Python/JS
-      # clients: checkout with secrets.LLMTESTLAB_REPO_TOKEN.
-      - name: Checkout llmentary proxy source
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: barzoj-co/llmentary
-          token: ${{ secrets.LLMTESTLAB_REPO_TOKEN }}
-          path: llmentary
-          persist-credentials: false
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -110,13 +98,15 @@ jobs:
           cache-dependency-path: |
             go.mod
             examples/go/go.mod
-            llmentary/go.mod
 
-      - name: Build proxy from source
-        working-directory: llmentary
+      - name: Install pinned proxy release
+        env:
+          LLMTESTLAB_REPO_TOKEN: ${{ secrets.LLMTESTLAB_REPO_TOKEN }}
+          LLMENTARY_LIVE_DOWNLOAD: "1"
+          LLMENTARY_LIVE_DOWNLOAD_DIR: ${{ github.workspace }}/bin
         run: |
           mkdir -p "$GITHUB_WORKSPACE/bin"
-          CGO_ENABLED=0 go build -o "$GITHUB_WORKSPACE/bin/llmentary" ./cmd/llmentary
+          go test -run TestDownloadPinnedProxyRelease -count=1 -v
           echo "$GITHUB_WORKSPACE/bin" >> "$GITHUB_PATH"
 
       - name: Integration tests (proxy + mock upstream)
@@ -162,21 +152,9 @@ jobs:
             exit 1
           fi
           if [ "${HAS_REPO_TOKEN}" != "true" ]; then
-            echo "::error::LLMTESTLAB_REPO_TOKEN is required to build the proxy from source"
+            echo "::error::LLMTESTLAB_REPO_TOKEN is required to download the pinned proxy release"
             exit 1
           fi
-
-      # TODO: switch to GitHub Release binaries from barzoj-co/llmentary
-      # (checksum-verified via llmentary.DownloadRelease) when that repository
-      # is public. Until then, build the proxy from source like the Python/JS
-      # clients: checkout with secrets.LLMTESTLAB_REPO_TOKEN.
-      - name: Checkout llmentary proxy source
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: barzoj-co/llmentary
-          token: ${{ secrets.LLMTESTLAB_REPO_TOKEN }}
-          path: llmentary
-          persist-credentials: false
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -186,13 +164,15 @@ jobs:
             go.mod
             examples/go/go.mod
             e2e/go.mod
-            llmentary/go.mod
 
-      - name: Build proxy from source
-        working-directory: llmentary
+      - name: Install pinned proxy release
+        env:
+          LLMTESTLAB_REPO_TOKEN: ${{ secrets.LLMTESTLAB_REPO_TOKEN }}
+          LLMENTARY_LIVE_DOWNLOAD: "1"
+          LLMENTARY_LIVE_DOWNLOAD_DIR: ${{ github.workspace }}/bin
         run: |
           mkdir -p "$GITHUB_WORKSPACE/bin"
-          CGO_ENABLED=0 go build -o "$GITHUB_WORKSPACE/bin/llmentary" ./cmd/llmentary
+          go test -run TestDownloadPinnedProxyRelease -count=1 -v
           echo "$GITHUB_WORKSPACE/bin" >> "$GITHUB_PATH"
 
       - name: Download e2e modules

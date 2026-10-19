@@ -26,15 +26,17 @@ const (
 	defaultReleaseRepo = "barzoj-co/llmentary"
 	checksumsName      = "checksums.txt"
 	maxArchiveBytes    = 80 << 20
+	// ProxyVersion is the barzoj-co/llmentary GitHub Release this client
+	// pins. Pass it to DownloadRelease unless you intentionally select
+	// another tag. The leading v matches the GitHub release tag.
+	ProxyVersion = "v0.1.0"
 )
 
 // DownloadOptions selects a GitHub Release of barzoj-co/llmentary and
 // installs the proxy binary after verifying its checksum.
-//
-// Releases may not exist yet while the proxy repository is private; the
-// helper is still useful for pinning a version once they are published.
 type DownloadOptions struct {
 	// Version is a release tag such as v0.1.0. The leading v is optional.
+	// Callers should pass ProxyVersion unless they pin a different release.
 	Version string
 	// DestDir is the directory that will contain the extracted binary.
 	DestDir string

@@ -13,9 +13,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
@@ -27,6 +29,58 @@ func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 func TestDefaultReleaseRepo(t *testing.T) {
 	if defaultReleaseRepo != "barzoj-co/llmentary" {
 		t.Fatalf("defaultReleaseRepo=%q", defaultReleaseRepo)
+	}
+}
+
+func TestProxyVersion(t *testing.T) {
+	if ProxyVersion != "v0.1.0" {
+		t.Fatalf("ProxyVersion=%q want v0.1.0", ProxyVersion)
+	}
+	tag, version := normalizeReleaseVersion(ProxyVersion)
+	if tag != "v0.1.0" || version != "0.1.0" {
+		t.Fatalf("normalizeReleaseVersion(%q)=(%q, %q)", ProxyVersion, tag, version)
+	}
+	got := releaseArchiveName(version, "linux", "amd64")
+	if got != "llmentary_0.1.0_linux_amd64.tar.gz" {
+		t.Fatalf("releaseArchiveName=%q", got)
+	}
+}
+
+func TestDownloadPinnedProxyRelease(t *testing.T) {
+	if os.Getenv("LLMENTARY_LIVE_DOWNLOAD") != "1" {
+		t.Skip("set LLMENTARY_LIVE_DOWNLOAD=1 to download barzoj-co/llmentary@" + ProxyVersion)
+	}
+	dest := os.Getenv("LLMENTARY_LIVE_DOWNLOAD_DIR")
+	if dest == "" {
+		dest = t.TempDir()
+	}
+	if err := os.MkdirAll(dest, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	path, err := DownloadRelease(ctx, DownloadOptions{
+		Version: ProxyVersion,
+		DestDir: dest,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.IsDir() || info.Size() < 1024 {
+		t.Fatalf("extracted binary looks empty: path=%s size=%d", path, info.Size())
+	}
+	if info.Mode()&0o111 == 0 {
+		t.Fatalf("extracted binary is not executable: mode=%s", info.Mode())
+	}
+	cmd := exec.Command(path, "--help")
+	out, err := cmd.CombinedOutput()
+	t.Logf("llmentary --help: err=%v\n%s", err, out)
+	if err != nil && len(out) == 0 {
+		t.Fatalf("running downloaded binary: %v", err)
 	}
 }
 
