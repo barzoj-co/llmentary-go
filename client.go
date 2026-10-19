@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 
-package llmtestlab
+package llmentary
 
 import (
 	"bytes"
@@ -31,7 +31,7 @@ func NewClient(proxyControlURL string, opts ...ClientOption) (*Client, error) {
 	if u.Scheme == "" || u.Host == "" {
 		return nil, fmt.Errorf("proxy control URL must include scheme and host")
 	}
-	c := &Client{baseURL: u, httpClient: http.DefaultClient, controlToken: os.Getenv("LLMTESTLAB_CONTROL_TOKEN")}
+	c := &Client{baseURL: u, httpClient: http.DefaultClient, controlToken: os.Getenv("LLMENTARY_CONTROL_TOKEN")}
 	for _, opt := range opts {
 		opt(c)
 	}
@@ -107,7 +107,7 @@ func (c *Client) Delete(ctx context.Context, sessionID string) error {
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return fmt.Errorf("llmtestlab delete failed: status=%d body=%s", resp.StatusCode, string(body))
+		return fmt.Errorf("llmentary delete failed: status=%d body=%s", resp.StatusCode, string(body))
 	}
 	return nil
 }
@@ -127,7 +127,7 @@ func (c *Client) getJSON(ctx context.Context, path string, q url.Values, out any
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return fmt.Errorf("llmtestlab get failed: status=%d body=%s", resp.StatusCode, string(body))
+		return fmt.Errorf("llmentary get failed: status=%d body=%s", resp.StatusCode, string(body))
 	}
 	return json.NewDecoder(resp.Body).Decode(out)
 }

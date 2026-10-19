@@ -9,13 +9,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/barzoj-co/llm-test-lab-go"
+	"github.com/barzoj-co/llmentary-go"
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
 )
 
 func TestWeatherTool(t *testing.T) {
-	if _, err := llmtestlab.ResolveBinary(); err != nil {
+	if _, err := llmentary.ResolveBinary(); err != nil {
 		t.Skip(err.Error())
 	}
 
@@ -37,15 +37,15 @@ func TestWeatherTool(t *testing.T) {
 	}))
 	t.Cleanup(upstream.Close)
 
-	proxy := llmtestlab.StartForTest(t,
-		llmtestlab.WithUpstream("openai="+upstream.URL),
-		llmtestlab.WithStartTimeout(10*time.Second),
+	proxy := llmentary.StartForTest(t,
+		llmentary.WithUpstream("openai="+upstream.URL),
+		llmentary.WithStartTimeout(10*time.Second),
 	)
 
-	testLab := llmtestlab.New(t,
-		llmtestlab.WithProxyURL(proxy.ProxyURL),
-		llmtestlab.WithControlURL(proxy.ControlURL),
-		llmtestlab.WithWait(time.Millisecond, time.Second),
+	testLab := llmentary.New(t,
+		llmentary.WithProxyURL(proxy.ProxyURL),
+		llmentary.WithControlURL(proxy.ControlURL),
+		llmentary.WithWait(time.Millisecond, time.Second),
 	)
 	client := openai.NewClient(
 		option.WithAPIKey("test-key"),
@@ -65,7 +65,7 @@ func TestWeatherTool(t *testing.T) {
 	}
 
 	assert := testLab.Expect(context.Background())
-	assert.ToolCalled("get_weather", llmtestlab.ArgsSubset(map[string]any{"city": "Paris"}))
+	assert.ToolCalled("get_weather", llmentary.ArgsSubset(map[string]any{"city": "Paris"}))
 	assert.FinishReason("tool_calls")
 	assert.TokensAtMost(20)
 	assert.NoErrors()

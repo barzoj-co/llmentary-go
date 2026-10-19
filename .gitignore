@@ -1,6 +1,6 @@
 bin/
 dist/
-/llm-test-lab
+/llmentary
 *.exe
 *.test
 coverage.out

@@ -6,12 +6,12 @@ body:
     attributes:
       value: |
         Thanks for a bug report. Remove API keys, tokens, and private prompts before submitting.
-        Proxy bugs belong in [barzoj-co/llm-test-lab](https://github.com/barzoj-co/llm-test-lab/issues).
+        Proxy bugs belong in [barzoj-co/llmentary](https://github.com/barzoj-co/llmentary/issues).
   - type: input
     id: client_version
     attributes:
       label: Client / module version
-      description: The `github.com/barzoj-co/llm-test-lab-go` version or commit you are using.
+      description: The `github.com/barzoj-co/llmentary-go` version or commit you are using.
       placeholder: v0.1.0 or go.mod pseudo-version
     validations:
       required: true
@@ -19,7 +19,7 @@ body:
     id: proxy_version
     attributes:
       label: Proxy version
-      description: Version or commit of the `llm-test-lab` proxy binary.
+      description: Version or commit of the `llmentary` proxy binary.
       placeholder: v0.1.0
     validations:
       required: true
@@ -43,8 +43,8 @@ body:
     attributes:
       label: How the proxy binary is obtained
       options:
-        - LLMTESTLAB_BIN
-        - PATH (llm-test-lab or llmtestlab)
+        - LLMENTARY_BIN
+        - PATH (llmentary)
         - DownloadRelease
         - Built from source
         - Other

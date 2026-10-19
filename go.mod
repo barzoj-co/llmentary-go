@@ -1,3 +1,3 @@
-module github.com/barzoj-co/llm-test-lab-go
+module github.com/barzoj-co/llmentary-go
 
 go 1.22

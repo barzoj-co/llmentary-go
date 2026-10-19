@@ -1,52 +1,54 @@
-# llm-test-lab-go
+# llmentary-go
 
-[![CI](https://github.com/barzoj-co/llm-test-lab-go/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/barzoj-co/llm-test-lab-go/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/gh/barzoj-co/llm-test-lab-go/graph/badge.svg)](https://codecov.io/gh/barzoj-co/llm-test-lab-go)
-[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/barzoj-co/llm-test-lab-go/badge)](https://scorecard.dev/viewer/?uri=github.com/barzoj-co/llm-test-lab-go)
-[![License: MIT](https://img.shields.io/github/license/barzoj-co/llm-test-lab-go)](LICENSE)
-[![Go Reference](https://pkg.go.dev/badge/github.com/barzoj-co/llm-test-lab-go.svg)](https://pkg.go.dev/github.com/barzoj-co/llm-test-lab-go)
-[![Release](https://img.shields.io/github/v/release/barzoj-co/llm-test-lab-go?sort=semver)](https://github.com/barzoj-co/llm-test-lab-go/releases)
+[![CI](https://github.com/barzoj-co/llmentary-go/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/barzoj-co/llmentary-go/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/barzoj-co/llmentary-go/graph/badge.svg)](https://codecov.io/gh/barzoj-co/llmentary-go)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/barzoj-co/llmentary-go/badge)](https://scorecard.dev/viewer/?uri=github.com/barzoj-co/llmentary-go)
+[![License: MIT](https://img.shields.io/github/license/barzoj-co/llmentary-go)](LICENSE)
+[![Go Reference](https://pkg.go.dev/badge/github.com/barzoj-co/llmentary-go.svg)](https://pkg.go.dev/github.com/barzoj-co/llmentary-go)
+[![Release](https://img.shields.io/github/v/release/barzoj-co/llmentary-go?sort=semver)](https://github.com/barzoj-co/llmentary-go/releases)
 
-MIT Go client for [llm-test-lab](https://github.com/barzoj-co/llm-test-lab):
-deterministic, trace-based integration tests for LLM apps. The client never uses
-an LLM judge. Assertions run against calls recorded by the local proxy binary.
+Go client for [llmentary](https://github.com/barzoj-co/llmentary): deterministic
+trace-based integration tests for LLM apps. The client never uses an LLM judge.
+Assertions run against calls recorded by the local proxy binary.
 
-This repository is the Go equivalent of `llm-test-lab-python` and
-`llm-test-lab-js`.
+Renamed from llm-test-lab (pre-release).
 
-<!-- ltl-repos:start -->
-## llm-test-lab repositories
+This repository is the Go equivalent of `llmentary-python` and
+`llmentary-js`.
+
+<!-- llmentary-repos:start -->
+## llmentary repositories
 
 | Repository | What |
 |---|---|
-| [llm-test-lab](https://github.com/barzoj-co/llm-test-lab) | Recording proxy binary (Go) |
-| [llm-test-lab-go](https://github.com/barzoj-co/llm-test-lab-go) | Go client for `go test` |
-| [llm-test-lab-python](https://github.com/barzoj-co/llm-test-lab-python) | Python client and pytest plugin |
-| [llm-test-lab-js](https://github.com/barzoj-co/llm-test-lab-js) | TypeScript/JavaScript client for Vitest and Jest |
-<!-- ltl-repos:end -->
+| [llmentary](https://github.com/barzoj-co/llmentary) | Recording proxy binary (Go) |
+| [llmentary-go](https://github.com/barzoj-co/llmentary-go) | Go client for `go test` |
+| [llmentary-python](https://github.com/barzoj-co/llmentary-python) | Python client and pytest plugin |
+| [llmentary-js](https://github.com/barzoj-co/llmentary-js) | TypeScript/JavaScript client for Vitest and Jest |
+<!-- llmentary-repos:end -->
 
 ## Install
 
 ```bash
-go get github.com/barzoj-co/llm-test-lab-go
+go get github.com/barzoj-co/llmentary-go
 ```
 
-Install the proxy binary from [barzoj-co/llm-test-lab](https://github.com/barzoj-co/llm-test-lab)
-(GitHub Releases, or `go install github.com/barzoj-co/llm-test-lab/cmd/llmtestlab@latest`).
-Put it on your `PATH` as `llm-test-lab`, or set `LLMTESTLAB_BIN`.
+Install the proxy binary from [barzoj-co/llmentary](https://github.com/barzoj-co/llmentary)
+(GitHub Releases, or `go install github.com/barzoj-co/llmentary/cmd/llmentary@latest`).
+Put it on your `PATH` as `llmentary`, or set `LLMENTARY_BIN`.
 
 ## Quickstart
 
 Run the proxy against OpenAI:
 
 ```bash
-llm-test-lab \
+llmentary \
   --listen 127.0.0.1:7777 \
   --control 127.0.0.1:7778 \
   --upstream openai=https://api.openai.com/v1
 ```
 
-Point `openai-go` at the named upstream prefix and let `llmtestlab.New(t)` tag
+Point `openai-go` at the named upstream prefix and let `llmentary.New(t)` tag
 requests:
 
 ```go
@@ -57,13 +59,13 @@ import (
     "os"
     "testing"
 
-    "github.com/barzoj-co/llm-test-lab-go"
+    "github.com/barzoj-co/llmentary-go"
     "github.com/openai/openai-go"
     "github.com/openai/openai-go/option"
 )
 
 func TestWeatherTool(t *testing.T) {
-    lab := llmtestlab.New(t)
+    lab := llmentary.New(t)
 
     client := openai.NewClient(
         option.WithAPIKey(os.Getenv("OPENAI_API_KEY")),
@@ -78,7 +80,7 @@ func TestWeatherTool(t *testing.T) {
 
     assert := lab.Expect(context.Background())
     assert.CallCount(1)
-    assert.ToolCalled("get_weather", llmtestlab.ArgsSubset(map[string]any{"city": "Paris"}))
+    assert.ToolCalled("get_weather", llmentary.ArgsSubset(map[string]any{"city": "Paris"}))
     assert.NoRetries()
     assert.NoErrors()
     assert.TokensBelow(1000)
@@ -90,19 +92,18 @@ OPENAI_API_KEY=sk-... go test ./...
 ```
 
 If you prefer not to run the proxy as a sidecar, start it with
-`llmtestlab.StartForTest(t, ...)` and pass `proxy.ProxyURL` / `proxy.ControlURL`
+`llmentary.StartForTest(t, ...)` and pass `proxy.ProxyURL` / `proxy.ControlURL`
 to `New` via `WithProxyURL` / `WithControlURL` (see [docs/go-client.md](docs/go-client.md)).
 
 ## Binary resolution
 
 The client looks up the proxy executable in this order:
 
-1. `LLMTESTLAB_BIN` (absolute or relative path)
-2. `llm-test-lab` on `PATH`
-3. `llmtestlab` on `PATH` (GoReleaser / `go install` name)
+1. `LLMENTARY_BIN` (absolute or relative path)
+2. `llmentary` on `PATH` (GitHub Releases / `go install` name)
 
 `DownloadRelease` can fetch a pinned GitHub Release of
-`barzoj-co/llm-test-lab` and verify `checksums.txt` before extracting. Releases
+`barzoj-co/llmentary` and verify `checksums.txt` before extracting. Releases
 may not exist yet while the proxy repository is private.
 
 There is no CGO and no post-install hook.
