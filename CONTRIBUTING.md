@@ -83,8 +83,11 @@ Keep changes focused. Never merge your own PR unless a maintainer asks you to.
 PR titles must be [conventional commits](https://www.conventionalcommits.org/)
 (`feat:`, `fix:`, `docs:`, `chore:`, `ci:`, `refactor:`, `test:`) so
 [release-please](https://github.com/googleapis/release-please) can open the
-changelog PR. Tags are plain `vX.Y.Z` on the root module; `examples/go` and `e2e`
-are not tagged.
+changelog PR. Tags are plain `vX.Y.Z` on the root module (`include-component-in-tag`
+is false); `examples/go` and `e2e` are not tagged. The first release is forced to
+`0.1.0` via `initial-version` in `release-please-config.json` (Go modules stay on
+the v0 import path). That key only applies when no prior tag exists and can stay
+after `v0.1.0`.
 
 Coverage is **informational**. Codecov comments and status checks must not fail a
 PR (project and patch are `informational: true`).
@@ -92,9 +95,10 @@ PR (project and patch are `informational: true`).
 ## CI secrets and the e2e gate
 
 Secrets stay off workflow- and job-level `env:`. `OPENAI_API_KEY` is injected
-only into the live `OpenAI e2e tests` step; `LLMTESTLAB_REPO_TOKEN` is only the
-`actions/checkout` token for the private proxy. The live `e2e` job uses the
-`openai-e2e` GitHub Actions environment. Maintainers approve that environment
+only into the live `OpenAI e2e tests` step; `LLMTESTLAB_REPO_TOKEN` is only in
+the `Install pinned proxy release` step (private GitHub Release assets). The
+live `e2e` job uses the `openai-e2e` GitHub Actions environment. Maintainers
+approve that environment
 deployment on each pull request (and on `push` to `main`) before the paid
 OpenAI suite runs. Integration and mock-upstream tests do not use the
 environment and do not wait for approval. Fork PRs skip `e2e`; `e2e-gate`

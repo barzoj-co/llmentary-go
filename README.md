@@ -102,9 +102,9 @@ The client looks up the proxy executable in this order:
 1. `LLMENTARY_BIN` (absolute or relative path)
 2. `llmentary` on `PATH` (GitHub Releases / `go install` name)
 
-`DownloadRelease` can fetch a pinned GitHub Release of
-`barzoj-co/llmentary` and verify `checksums.txt` before extracting. Releases
-may not exist yet while the proxy repository is private.
+`DownloadRelease` fetches a pinned GitHub Release of `barzoj-co/llmentary`
+(`ProxyVersion`, currently `v0.1.0`) and verifies `checksums.txt` before
+extracting.
 
 There is no CGO and no post-install hook.
 

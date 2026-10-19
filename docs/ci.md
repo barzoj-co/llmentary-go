@@ -4,18 +4,18 @@ Workflows live under `.github/workflows/`. The main pipeline is `ci.yml`:
 
 - `lint`: `go vet` and a pinned `golangci-lint`
 - `test`: unit tests (`go test ./...`) and tokenless Codecov upload (`unit`)
-- `integration`: non-fork pull requests and pushes to `main`; builds the proxy
-  from `barzoj-co/llmentary` with `secrets.LLMTESTLAB_REPO_TOKEN`, runs the
-  mock-upstream example, uploads `coverage-integration.out` tokenless
+- `integration`: non-fork pull requests and pushes to `main`; downloads the
+  pinned `ProxyVersion` GitHub Release of `barzoj-co/llmentary` with
+  `llmentary.DownloadRelease` (checksum-verified; token
+  `secrets.LLMTESTLAB_REPO_TOKEN` for private assets), runs the mock-upstream
+  example, uploads `coverage-integration.out` tokenless
 - `e2e`: same event filter as `integration`; uses the `openai-e2e` environment
-  so each live run waits for maintainer approval; builds the proxy, downloads
-  and compiles the e2e module without secrets, then runs the live OpenAI suite
+  so each live run waits for maintainer approval; installs the same pinned
+  proxy release, downloads and compiles the e2e module without secrets, then
+  runs the live OpenAI suite
 - `e2e-gate`: always runs; green only when `e2e` succeeded. This is the check
   to require, not `e2e` itself (a skipped required check is treated as passing).
   A rejected or timed-out environment approval makes `e2e-gate` red.
-
-TODO: switch the proxy checkout to checksum-verified GitHub Release binaries via
-`llmentary.DownloadRelease` when `barzoj-co/llmentary` is public.
 
 The e2e tests fail (they do not skip) when `OPENAI_API_KEY` is unset so missing
 credentials are visible. CI prints the `=== RUN` / `--- PASS` lines so the
@@ -24,10 +24,10 @@ executed test names are visible in the log. Secret values are never printed.
 ## CI secrets and the e2e gate
 
 No secret is set at workflow or job level. `OPENAI_E2E_MODEL` (a variable) may
-stay on the `e2e` job. `LLMTESTLAB_REPO_TOKEN` is only passed as
-`with: token:` on the `actions/checkout` step for `barzoj-co/llmentary`.
-`OPENAI_API_KEY` is only in the step `env:` of `OpenAI e2e tests`. Presence
-checks use the boolean form (`secrets.X != ''`), never `$OPENAI_API_KEY`.
+stay on the `e2e` job. `LLMTESTLAB_REPO_TOKEN` is only in the step `env:` of
+`Install pinned proxy release`. `OPENAI_API_KEY` is only in the step `env:` of
+`OpenAI e2e tests`. Presence checks use the boolean form (`secrets.X != ''`),
+never `$OPENAI_API_KEY`.
 
 `e2e` is not a matrix. Only that job sets `environment: openai-e2e`. Unit,
 integration, and mock-upstream tests do not, so they run without approval.

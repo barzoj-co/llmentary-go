@@ -10,6 +10,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -23,18 +24,22 @@ import (
 )
 
 const (
-	defaultReleaseRepo = "barzoj-co/llmentary"
-	checksumsName      = "checksums.txt"
-	maxArchiveBytes    = 80 << 20
+	defaultReleaseRepo   = "barzoj-co/llmentary"
+	defaultGitHubAPIRoot = "https://api.github.com"
+	checksumsName        = "checksums.txt"
+	maxArchiveBytes      = 80 << 20
+	downloadUserAgent    = "llmentary-go"
+	// ProxyVersion is the barzoj-co/llmentary GitHub Release this client
+	// pins. Pass it to DownloadRelease unless you intentionally select
+	// another tag. The leading v matches the GitHub release tag.
+	ProxyVersion = "v0.1.0"
 )
 
 // DownloadOptions selects a GitHub Release of barzoj-co/llmentary and
 // installs the proxy binary after verifying its checksum.
-//
-// Releases may not exist yet while the proxy repository is private; the
-// helper is still useful for pinning a version once they are published.
 type DownloadOptions struct {
 	// Version is a release tag such as v0.1.0. The leading v is optional.
+	// Callers should pass ProxyVersion unless they pin a different release.
 	Version string
 	// DestDir is the directory that will contain the extracted binary.
 	DestDir string
@@ -49,6 +54,10 @@ type DownloadOptions struct {
 	// BaseURL overrides GitHub download URLs. Intended for tests.
 	// When set, assets are fetched from BaseURL/{tag}/{filename}.
 	BaseURL string
+	// APIBaseURL overrides the GitHub API root. Intended for tests.
+	// Defaults to https://api.github.com. Used when a token is set and
+	// BaseURL is empty (private GitHub Releases).
+	APIBaseURL string
 	// GOOS and GOARCH override runtime.GOOS/GOARCH.
 	GOOS   string
 	GOARCH string
@@ -88,21 +97,13 @@ func DownloadRelease(ctx context.Context, opts DownloadOptions) (string, error) 
 		token = firstNonEmpty(os.Getenv("LLMENTARY_GITHUB_TOKEN"), os.Getenv("GH_TOKEN"), os.Getenv("GITHUB_TOKEN"), os.Getenv("LLMTESTLAB_REPO_TOKEN"))
 	}
 
-	archiveURL := releaseAssetURL(opts.BaseURL, repo, tag, archiveName)
-	sumsURL := releaseAssetURL(opts.BaseURL, repo, tag, checksumsName)
-
-	sumsBody, err := httpGetBytes(ctx, client, sumsURL, token, 1<<20)
+	sumsBody, archiveBody, err := fetchReleaseAssets(ctx, client, opts.BaseURL, opts.APIBaseURL, repo, tag, archiveName, token)
 	if err != nil {
-		return "", fmt.Errorf("llmentary: download checksums: %w", err)
+		return "", err
 	}
 	wantSum, err := checksumForFile(sumsBody, archiveName)
 	if err != nil {
 		return "", err
-	}
-
-	archiveBody, err := httpGetBytes(ctx, client, archiveURL, token, maxArchiveBytes)
-	if err != nil {
-		return "", fmt.Errorf("llmentary: download archive %s: %w", archiveName, err)
 	}
 	got := sha256.Sum256(archiveBody)
 	gotHex := hex.EncodeToString(got[:])
@@ -150,15 +151,99 @@ func releaseAssetURL(base, repo, tag, name string) string {
 	return "https://github.com/" + repo + "/releases/download/" + tag + "/" + name
 }
 
-func httpGetBytes(ctx context.Context, client *http.Client, rawURL, token string, limit int64) ([]byte, error) {
+func githubReleaseAPIURL(apiRoot, repo, tag string) string {
+	apiRoot = strings.TrimRight(apiRoot, "/")
+	if apiRoot == "" {
+		apiRoot = defaultGitHubAPIRoot
+	}
+	return apiRoot + "/repos/" + repo + "/releases/tags/" + tag
+}
+
+func fetchReleaseAssets(ctx context.Context, client *http.Client, baseURL, apiRoot, repo, tag, archiveName, token string) (sumsBody, archiveBody []byte, err error) {
+	if strings.TrimSpace(baseURL) != "" {
+		sumsURL := releaseAssetURL(baseURL, repo, tag, checksumsName)
+		archiveURL := releaseAssetURL(baseURL, repo, tag, archiveName)
+		sumsBody, err = httpGetBytesAccept(ctx, client, sumsURL, token, 1<<20, "application/octet-stream")
+		if err != nil {
+			return nil, nil, fmt.Errorf("llmentary: download checksums: %w", err)
+		}
+		archiveBody, err = httpGetBytesAccept(ctx, client, archiveURL, token, maxArchiveBytes, "application/octet-stream")
+		if err != nil {
+			return nil, nil, fmt.Errorf("llmentary: download archive %s: %w", archiveName, err)
+		}
+		return sumsBody, archiveBody, nil
+	}
+	if token != "" {
+		return fetchGitHubAPIReleaseAssets(ctx, client, apiRoot, repo, tag, archiveName, token)
+	}
+	sumsURL := releaseAssetURL("", repo, tag, checksumsName)
+	archiveURL := releaseAssetURL("", repo, tag, archiveName)
+	sumsBody, err = httpGetBytesAccept(ctx, client, sumsURL, "", 1<<20, "")
+	if err != nil {
+		return nil, nil, fmt.Errorf("llmentary: download checksums: %w", err)
+	}
+	archiveBody, err = httpGetBytesAccept(ctx, client, archiveURL, "", maxArchiveBytes, "")
+	if err != nil {
+		return nil, nil, fmt.Errorf("llmentary: download archive %s: %w", archiveName, err)
+	}
+	return sumsBody, archiveBody, nil
+}
+
+type githubReleaseMeta struct {
+	TagName string `json:"tag_name"`
+	Assets  []struct {
+		Name string `json:"name"`
+		URL  string `json:"url"`
+	} `json:"assets"`
+}
+
+func fetchGitHubAPIReleaseAssets(ctx context.Context, client *http.Client, apiRoot, repo, tag, archiveName, token string) (sumsBody, archiveBody []byte, err error) {
+	metaURL := githubReleaseAPIURL(apiRoot, repo, tag)
+	metaBody, err := httpGetBytesAccept(ctx, client, metaURL, token, 1<<20, "application/vnd.github+json")
+	if err != nil {
+		return nil, nil, fmt.Errorf("llmentary: lookup release %s: %w", tag, err)
+	}
+	var meta githubReleaseMeta
+	if err := json.Unmarshal(metaBody, &meta); err != nil {
+		return nil, nil, fmt.Errorf("llmentary: parse release %s metadata: %w", tag, err)
+	}
+	var sumsURL, archiveURL string
+	var names []string
+	for _, a := range meta.Assets {
+		names = append(names, a.Name)
+		switch a.Name {
+		case checksumsName:
+			sumsURL = a.URL
+		case archiveName:
+			archiveURL = a.URL
+		}
+	}
+	if sumsURL == "" || archiveURL == "" {
+		return nil, nil, fmt.Errorf("llmentary: release %s missing %s and/or %s (assets: %s)", tag, checksumsName, archiveName, strings.Join(names, ", "))
+	}
+	sumsBody, err = httpGetBytesAccept(ctx, client, sumsURL, token, 1<<20, "application/octet-stream")
+	if err != nil {
+		return nil, nil, fmt.Errorf("llmentary: download checksums: %w", err)
+	}
+	archiveBody, err = httpGetBytesAccept(ctx, client, archiveURL, token, maxArchiveBytes, "application/octet-stream")
+	if err != nil {
+		return nil, nil, fmt.Errorf("llmentary: download archive %s: %w", archiveName, err)
+	}
+	return sumsBody, archiveBody, nil
+}
+
+func httpGetBytesAccept(ctx context.Context, client *http.Client, rawURL, token string, limit int64, accept string) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
 		return nil, err
 	}
+	req.Header.Set("User-Agent", downloadUserAgent)
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
-	req.Header.Set("Accept", "application/octet-stream")
+	if accept != "" {
+		req.Header.Set("Accept", accept)
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err

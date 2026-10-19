@@ -156,7 +156,8 @@ proxy, err := llmentary.Start(ctx, llmentary.WithUpstream("openai=https://api.op
 ```
 
 `ResolveBinary` uses `LLMENTARY_BIN`, then `llmentary` on PATH.
-`DownloadRelease` can install a pinned GitHub Release after verifying `checksums.txt`.
+`DownloadRelease` installs the pinned `ProxyVersion` GitHub Release (`v0.1.0`)
+after verifying `checksums.txt`.
 
 ## Two-step tool flows
 

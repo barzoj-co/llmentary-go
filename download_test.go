@@ -13,9 +13,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
@@ -27,6 +29,61 @@ func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 func TestDefaultReleaseRepo(t *testing.T) {
 	if defaultReleaseRepo != "barzoj-co/llmentary" {
 		t.Fatalf("defaultReleaseRepo=%q", defaultReleaseRepo)
+	}
+}
+
+func TestProxyVersion(t *testing.T) {
+	if ProxyVersion != "v0.1.0" {
+		t.Fatalf("ProxyVersion=%q want v0.1.0", ProxyVersion)
+	}
+	tag, version := normalizeReleaseVersion(ProxyVersion)
+	if tag != "v0.1.0" || version != "0.1.0" {
+		t.Fatalf("normalizeReleaseVersion(%q)=(%q, %q)", ProxyVersion, tag, version)
+	}
+	got := releaseArchiveName(version, "linux", "amd64")
+	if got != "llmentary_0.1.0_linux_amd64.tar.gz" {
+		t.Fatalf("releaseArchiveName=%q", got)
+	}
+}
+
+func TestDownloadPinnedProxyRelease(t *testing.T) {
+	if os.Getenv("LLMENTARY_LIVE_DOWNLOAD") != "1" {
+		t.Skip("set LLMENTARY_LIVE_DOWNLOAD=1 to download barzoj-co/llmentary@" + ProxyVersion)
+	}
+	dest := os.Getenv("LLMENTARY_LIVE_DOWNLOAD_DIR")
+	if dest == "" {
+		dest = t.TempDir()
+	}
+	if err := os.MkdirAll(dest, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	path, err := DownloadRelease(ctx, DownloadOptions{
+		Version: ProxyVersion,
+		DestDir: dest,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.IsDir() || info.Size() < 1024 {
+		t.Fatalf("extracted binary looks empty: path=%s size=%d", path, info.Size())
+	}
+	if info.Mode()&0o111 == 0 {
+		t.Fatalf("extracted binary is not executable: mode=%s", info.Mode())
+	}
+	helpCtx, helpCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer helpCancel()
+	cmd := exec.CommandContext(helpCtx, path, "--help")
+	cmd.Env = []string{"PATH=" + os.Getenv("PATH")}
+	out, err := cmd.CombinedOutput()
+	t.Logf("llmentary --help: err=%v\n%s", err, out)
+	if err != nil {
+		t.Fatalf("running downloaded binary: %v\n%s", err, out)
 	}
 }
 
@@ -55,6 +112,11 @@ func TestDownloadReleaseUsesLlmentaryGithubToken(t *testing.T) {
 	archive, sum := testTarGz(t, "llmentary", []byte("payload"))
 	wantArchive := "llmentary_0.1.0_linux_amd64.tar.gz"
 	oldArchive := "llm-test-lab_0.1.0_linux_amd64.tar.gz"
+	meta := []byte(`{"tag_name":"v0.1.0","assets":[` +
+		`{"name":"checksums.txt","url":"https://api.github.com/repos/barzoj-co/llmentary/releases/assets/1"},` +
+		`{"name":"` + wantArchive + `","url":"https://api.github.com/repos/barzoj-co/llmentary/releases/assets/2"},` +
+		`{"name":"` + oldArchive + `","url":"https://api.github.com/repos/barzoj-co/llmentary/releases/assets/3"}` +
+		`]}`)
 
 	var gotURLs []string
 	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
@@ -62,16 +124,25 @@ func TestDownloadReleaseUsesLlmentaryGithubToken(t *testing.T) {
 		if auth := req.Header.Get("Authorization"); auth != "Bearer from-llmentary" {
 			t.Errorf("Authorization=%q", auth)
 		}
+		if ua := req.Header.Get("User-Agent"); ua != "llmentary-go" {
+			t.Errorf("User-Agent=%q", ua)
+		}
 		body := []byte("not found")
 		status := http.StatusNotFound
 		switch {
-		case strings.HasSuffix(req.URL.Path, "/checksums.txt"):
+		case req.URL.Path == "/repos/barzoj-co/llmentary/releases/tags/v0.1.0":
+			if req.Header.Get("Accept") != "application/vnd.github+json" {
+				t.Errorf("Accept=%q", req.Header.Get("Accept"))
+			}
+			body = meta
+			status = http.StatusOK
+		case strings.HasSuffix(req.URL.Path, "/releases/assets/1"):
 			body = []byte(sum + "  " + wantArchive + "\n" + sum + "  " + oldArchive + "\n")
 			status = http.StatusOK
-		case strings.HasSuffix(req.URL.Path, "/"+wantArchive):
+		case strings.HasSuffix(req.URL.Path, "/releases/assets/2"):
 			body = archive
 			status = http.StatusOK
-		case strings.Contains(req.URL.Path, oldArchive):
+		case strings.Contains(req.URL.Path, oldArchive) || strings.HasSuffix(req.URL.Path, "/releases/assets/3"):
 			t.Errorf("fetched old archive name %s", req.URL)
 		}
 		return &http.Response{
@@ -96,14 +167,17 @@ func TestDownloadReleaseUsesLlmentaryGithubToken(t *testing.T) {
 		t.Fatalf("extracted name=%q", path)
 	}
 	if len(gotURLs) == 0 {
-		t.Fatal("expected GitHub download URLs")
+		t.Fatal("expected GitHub API URLs")
 	}
 	for _, raw := range gotURLs {
 		if strings.Contains(raw, "llm-test-lab") {
 			t.Fatalf("old name in download URL %s", raw)
 		}
-		if !strings.Contains(raw, "https://github.com/barzoj-co/llmentary/releases/download/v0.1.0/") {
-			t.Fatalf("expected default repo URL, got %s", raw)
+		if !strings.Contains(raw, "https://api.github.com/repos/barzoj-co/llmentary/") {
+			t.Fatalf("expected GitHub API URL, got %s", raw)
+		}
+		if strings.Contains(raw, "/releases/download/") {
+			t.Fatalf("private download should not use browser URL %s", raw)
 		}
 	}
 }
