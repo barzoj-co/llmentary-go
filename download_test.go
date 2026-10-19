@@ -76,11 +76,14 @@ func TestDownloadPinnedProxyRelease(t *testing.T) {
 	if info.Mode()&0o111 == 0 {
 		t.Fatalf("extracted binary is not executable: mode=%s", info.Mode())
 	}
-	cmd := exec.Command(path, "--help")
+	helpCtx, helpCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer helpCancel()
+	cmd := exec.CommandContext(helpCtx, path, "--help")
+	cmd.Env = []string{"PATH=" + os.Getenv("PATH")}
 	out, err := cmd.CombinedOutput()
 	t.Logf("llmentary --help: err=%v\n%s", err, out)
-	if err != nil && len(out) == 0 {
-		t.Fatalf("running downloaded binary: %v", err)
+	if err != nil {
+		t.Fatalf("running downloaded binary: %v\n%s", err, out)
 	}
 }
 
