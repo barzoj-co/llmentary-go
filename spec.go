@@ -205,7 +205,7 @@ func selectSpecCalls(calls []Call, options specOptions) ([]Call, error) {
 		}
 	}
 	if len(out) == 0 {
-		return nil, fmt.Errorf("validation was not run")
+		return nil, fmt.Errorf("validation was not run: no calls match seq %v (trace has %d call(s))", options.Seqs, len(calls))
 	}
 	return out, nil
 }
@@ -238,11 +238,29 @@ func pathMatches(path, pointer, ignore string) bool {
 		if got == ignore || strings.TrimPrefix(got, "/") == strings.TrimPrefix(ignore, "/") {
 			return true
 		}
-		if strings.HasPrefix(got, ignore) || strings.HasSuffix(got, ignore) {
+		if segmentPrefix(got, ignore) || segmentSuffix(got, ignore) {
 			return true
 		}
 	}
 	return false
+}
+
+func segmentPrefix(got, ignore string) bool {
+	if !strings.HasPrefix(got, ignore) {
+		return false
+	}
+	rest := got[len(ignore):]
+	return rest == "" || rest[0] == '.' || rest[0] == '/' ||
+		strings.HasSuffix(ignore, ".") || strings.HasSuffix(ignore, "/")
+}
+
+func segmentSuffix(got, ignore string) bool {
+	if !strings.HasSuffix(got, ignore) {
+		return false
+	}
+	head := got[:len(got)-len(ignore)]
+	return head == "" || strings.HasSuffix(head, ".") || strings.HasSuffix(head, "/") ||
+		strings.HasPrefix(ignore, ".") || strings.HasPrefix(ignore, "/")
 }
 
 func formatSpecFinding(call Call, side, path, pointer, keyword, message string) string {

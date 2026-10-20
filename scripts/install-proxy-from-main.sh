@@ -17,6 +17,7 @@ if [[ -z "${TOKEN}" ]]; then
 fi
 
 mkdir -p "${DEST}"
+DEST="$(cd "${DEST}" && pwd)"
 TMP="$(mktemp -d)"
 cleanup() { rm -rf "${TMP}"; }
 trap cleanup EXIT

@@ -189,8 +189,12 @@ func TestE2EWaitMinCalls(t *testing.T) {
 			"temperature":0
 		}`)
 		stream, err := doOpenAI(apiKey, lm, "/chat/completions", chatBody)
-		if err != nil || !bytes.Contains(stream, []byte("data:")) {
+		if err != nil {
 			errc <- fmt.Errorf("chat stream: %w", err)
+			return
+		}
+		if !bytes.Contains(stream, []byte("data:")) {
+			errc <- fmt.Errorf("chat stream: no SSE data")
 			return
 		}
 		respBody := []byte(`{
@@ -200,8 +204,12 @@ func TestE2EWaitMinCalls(t *testing.T) {
 			"temperature":0
 		}`)
 		stream, err = doOpenAI(apiKey, lm, "/responses", respBody)
-		if err != nil || !bytes.Contains(stream, []byte(`"usage"`)) {
+		if err != nil {
 			errc <- fmt.Errorf("responses: %w", err)
+			return
+		}
+		if !bytes.Contains(stream, []byte(`"usage"`)) {
+			errc <- fmt.Errorf("responses: missing usage")
 			return
 		}
 		errc <- nil

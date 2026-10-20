@@ -118,8 +118,28 @@ func TestNoSpecViolationsOptions(t *testing.T) {
 
 	callsTB := &fakeTB{}
 	(&Assertions{t: callsTB, trace: trace}).NoSpecViolations(Calls(99))
-	if !strings.Contains(strings.Join(callsTB.messages, "\n"), "validation was not run") {
+	callsMsg := strings.Join(callsTB.messages, "\n")
+	if !strings.Contains(callsMsg, "validation was not run") || !strings.Contains(callsMsg, "99") {
 		t.Fatalf("empty Calls filter must not be vacuous: %q", callsTB.messages)
+	}
+}
+
+func TestPathMatchesWholeSegments(t *testing.T) {
+	t.Parallel()
+	if !pathMatches("foo", "/foo", "foo") {
+		t.Fatal("exact path should match")
+	}
+	if !pathMatches("tools.0.function.parameters.properties.unit.enumDescriptions", "", "enumDescriptions") {
+		t.Fatal("whole final segment should match")
+	}
+	if pathMatches("foobar", "", "foo") {
+		t.Fatal("IgnorePaths(foo) must not hide foobar")
+	}
+	if pathMatches("tools.0.name", "", "tool") {
+		t.Fatal("IgnorePaths(tool) must not hide tools.*")
+	}
+	if pathMatches("tools.0.function.valid", "", "id") {
+		t.Fatal("IgnorePaths(id) must not hide a path ending in valid")
 	}
 }
 
