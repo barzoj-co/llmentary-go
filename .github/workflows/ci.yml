@@ -102,12 +102,12 @@ jobs:
       - name: Install pinned proxy release
         env:
           LLMTESTLAB_REPO_TOKEN: ${{ secrets.LLMTESTLAB_REPO_TOKEN }}
+          GH_TOKEN: ${{ secrets.LLMTESTLAB_REPO_TOKEN }}
           LLMENTARY_LIVE_DOWNLOAD: "1"
           LLMENTARY_LIVE_DOWNLOAD_DIR: ${{ github.workspace }}/bin
         run: |
           mkdir -p "$GITHUB_WORKSPACE/bin"
           go test -run TestDownloadPinnedProxyRelease -count=1 -v
-          bash scripts/install-proxy-from-main.sh "$GITHUB_WORKSPACE/bin"
           echo "$GITHUB_WORKSPACE/bin" >> "$GITHUB_PATH"
 
       - name: Integration tests (proxy + mock upstream)
@@ -169,12 +169,12 @@ jobs:
       - name: Install pinned proxy release
         env:
           LLMTESTLAB_REPO_TOKEN: ${{ secrets.LLMTESTLAB_REPO_TOKEN }}
+          GH_TOKEN: ${{ secrets.LLMTESTLAB_REPO_TOKEN }}
           LLMENTARY_LIVE_DOWNLOAD: "1"
           LLMENTARY_LIVE_DOWNLOAD_DIR: ${{ github.workspace }}/bin
         run: |
           mkdir -p "$GITHUB_WORKSPACE/bin"
           go test -run TestDownloadPinnedProxyRelease -count=1 -v
-          bash scripts/install-proxy-from-main.sh "$GITHUB_WORKSPACE/bin"
           echo "$GITHUB_WORKSPACE/bin" >> "$GITHUB_PATH"
 
       - name: Download e2e modules
