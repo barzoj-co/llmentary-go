@@ -14,6 +14,8 @@ import (
 	"github.com/openai/openai-go/option"
 )
 
+// TestWeatherTool is the runnable form of the README Quickstart API:
+// lm := llmentary.New(t), then lm.OpenAIBaseURL, lm.HTTPClient, lm.Expect.
 func TestWeatherTool(t *testing.T) {
 	if _, err := llmentary.ResolveBinary(); err != nil {
 		t.Skip(err.Error())
@@ -42,15 +44,15 @@ func TestWeatherTool(t *testing.T) {
 		llmentary.WithStartTimeout(10*time.Second),
 	)
 
-	testLab := llmentary.New(t,
+	lm := llmentary.New(t,
 		llmentary.WithProxyURL(proxy.ProxyURL),
 		llmentary.WithControlURL(proxy.ControlURL),
 		llmentary.WithWait(time.Millisecond, time.Second),
 	)
 	client := openai.NewClient(
 		option.WithAPIKey("test-key"),
-		option.WithBaseURL(testLab.OpenAIBaseURL("openai")),
-		option.WithHTTPClient(testLab.HTTPClient()),
+		option.WithBaseURL(lm.OpenAIBaseURL("openai")),
+		option.WithHTTPClient(lm.HTTPClient()),
 		option.WithMaxRetries(0),
 	)
 
@@ -59,12 +61,27 @@ func TestWeatherTool(t *testing.T) {
 		Messages: []openai.ChatCompletionMessageParamUnion{
 			openai.UserMessage("Weather in Paris?"),
 		},
+		Tools: []openai.ChatCompletionToolParam{{
+			Function: openai.FunctionDefinitionParam{
+				Name: "get_weather",
+				Parameters: openai.FunctionParameters{
+					"type": "object",
+					"properties": map[string]any{
+						"city": map[string]any{"type": "string"},
+					},
+					"required": []string{"city"},
+				},
+			},
+		}},
+		ToolChoice: openai.ChatCompletionToolChoiceOptionParamOfChatCompletionNamedToolChoice(
+			openai.ChatCompletionNamedToolChoiceFunctionParam{Name: "get_weather"},
+		),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	assert := testLab.Expect(context.Background())
+	assert := lm.Expect(context.Background())
 	assert.ToolCalled("get_weather", llmentary.ArgsSubset(map[string]any{"city": "Paris"}))
 	assert.FinishReason("tool_calls")
 	assert.TokensAtMost(20)

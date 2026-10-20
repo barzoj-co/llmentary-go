@@ -24,11 +24,11 @@ import (
 func TestE2EChatCompletionsToolFlow(t *testing.T) {
 	apiKey := requireOpenAIKey(t)
 	model := e2eModel()
-	testLab := newE2ELab(t)
+	lm := newSession(t)
 	client := openai.NewClient(
 		option.WithAPIKey(apiKey),
-		option.WithBaseURL(testLab.OpenAIBaseURL("openai")),
-		option.WithHTTPClient(testLab.HTTPClient()),
+		option.WithBaseURL(lm.OpenAIBaseURL("openai")),
+		option.WithHTTPClient(lm.HTTPClient()),
 		option.WithMaxRetries(0),
 	)
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
@@ -64,7 +64,7 @@ func TestE2EChatCompletionsToolFlow(t *testing.T) {
 		t.Fatalf("expected final chat answer to mention Paris, got %#v", final)
 	}
 
-	assert := testLab.Expect(ctx)
+	assert := lm.Expect(ctx)
 	chat := assert.Trace().Query().APIType("chat").Expect(t)
 	chat.CallCount(2)
 	chat.ToolCalled("echo_city", llmentary.ArgsSubset(map[string]any{"city": "Paris"}))
@@ -81,7 +81,7 @@ func TestE2EChatCompletionsToolFlow(t *testing.T) {
 func TestE2EResponsesToolFlow(t *testing.T) {
 	apiKey := requireOpenAIKey(t)
 	model := e2eModel()
-	testLab := newE2ELab(t)
+	lm := newSession(t)
 
 	firstBody := []byte(`{
 		"model":` + strconv.Quote(model) + `,
@@ -96,12 +96,12 @@ func TestE2EResponsesToolFlow(t *testing.T) {
 			"parameters":{"type":"object","properties":{"city":{"type":"string"}},"required":["city"],"additionalProperties":false}
 		}]
 	}`)
-	responsesStream := postOpenAI(t, apiKey, testLab, "/responses", firstBody)
+	responsesStream := postOpenAI(t, apiKey, lm, "/responses", firstBody)
 	if !bytes.Contains(responsesStream, []byte("event:")) {
 		t.Fatalf("expected responses SSE stream, got %q", responsesStream)
 	}
 	firstCtx, firstCancel := context.WithTimeout(context.Background(), 20*time.Second)
-	firstTrace := testLab.Wait(firstCtx)
+	firstTrace := lm.Wait(firstCtx)
 	firstCancel()
 	responseCalls := firstTrace.Query().APIType("responses").Calls()
 	if len(responseCalls) != 1 || len(responseCalls[0].Normalized.ToolCalls) != 1 {
@@ -128,14 +128,14 @@ func TestE2EResponsesToolFlow(t *testing.T) {
 			"parameters":{"type":"object","properties":{"city":{"type":"string"}},"required":["city"],"additionalProperties":false}
 		}]
 	}`)
-	finalStream := postOpenAI(t, apiKey, testLab, "/responses", secondBody)
+	finalStream := postOpenAI(t, apiKey, lm, "/responses", secondBody)
 	if !bytes.Contains(finalStream, []byte("Paris")) {
 		t.Fatalf("expected final responses stream to mention Paris, got %q", finalStream)
 	}
 
 	finalCtx, finalCancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer finalCancel()
-	assert := testLab.Expect(finalCtx)
+	assert := lm.Expect(finalCtx)
 	responses := assert.Trace().Query().APIType("responses").Expect(t)
 	responses.CallCount(2)
 	responses.ToolCalled("echo_city", llmentary.ArgsSubset(map[string]any{"city": "Paris"}))
@@ -152,7 +152,7 @@ func TestE2EResponsesToolFlow(t *testing.T) {
 func TestE2EChatCompletionsNonStreaming(t *testing.T) {
 	apiKey := requireOpenAIKey(t)
 	model := e2eModel()
-	testLab := newE2ELab(t)
+	lm := newSession(t)
 	body := []byte(`{
 		"model":` + strconv.Quote(model) + `,
 		"messages":[{"role":"user","content":"Call the echo_city tool with city Paris. Do not answer in text."}],
@@ -168,9 +168,9 @@ func TestE2EChatCompletionsNonStreaming(t *testing.T) {
 			}
 		}]
 	}`)
-	_ = postOpenAI(t, apiKey, testLab, "/chat/completions", body)
+	_ = postOpenAI(t, apiKey, lm, "/chat/completions", body)
 	firstCtx, firstCancel := context.WithTimeout(context.Background(), 20*time.Second)
-	firstTrace := testLab.Wait(firstCtx)
+	firstTrace := lm.Wait(firstCtx)
 	firstCancel()
 	chatCalls := firstTrace.Query().APIType("chat").Calls()
 	if len(chatCalls) != 1 || len(chatCalls[0].Normalized.ToolCalls) != 1 {
@@ -187,10 +187,10 @@ func TestE2EChatCompletionsNonStreaming(t *testing.T) {
 		],
 		"temperature":0
 	}`)
-	_ = postOpenAI(t, apiKey, testLab, "/chat/completions", finalBody)
+	_ = postOpenAI(t, apiKey, lm, "/chat/completions", finalBody)
 	finalCtx, finalCancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer finalCancel()
-	assert := testLab.Expect(finalCtx)
+	assert := lm.Expect(finalCtx)
 	assert.CallCount(2)
 	chat := assert.Trace().Query().APIType("chat").Expect(t)
 	chat.ToolCalled("echo_city", llmentary.ArgsSubset(map[string]any{"city": "Paris"}))
@@ -209,15 +209,15 @@ func requireOpenAIKey(t *testing.T) string {
 	return apiKey
 }
 
-func postOpenAI(t *testing.T, apiKey string, lab *llmentary.Lab, path string, body []byte) []byte {
+func postOpenAI(t *testing.T, apiKey string, lm *llmentary.Session, path string, body []byte) []byte {
 	t.Helper()
-	req, err := http.NewRequest(http.MethodPost, lab.OpenAIBaseURL("openai")+path, bytes.NewReader(body))
+	req, err := http.NewRequest(http.MethodPost, lm.OpenAIBaseURL("openai")+path, bytes.NewReader(body))
 	if err != nil {
 		t.Fatal(err)
 	}
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 	req.Header.Set("Content-Type", "application/json")
-	key, value := lab.Header()
+	key, value := lm.Header()
 	req.Header.Set(key, value)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -234,7 +234,7 @@ func postOpenAI(t *testing.T, apiKey string, lab *llmentary.Lab, path string, bo
 	return stream
 }
 
-func newE2ELab(t *testing.T) *llmentary.Lab {
+func newSession(t *testing.T) *llmentary.Session {
 	t.Helper()
 	if _, err := llmentary.ResolveBinary(); err != nil {
 		t.Fatalf("llmentary proxy binary is required for e2e: %v", err)

@@ -14,22 +14,24 @@ Related references:
 
 ## Session per test
 
+`New(t)` returns `*Session`. Use `lm` as the local variable:
+
 ```go
 func TestAgent(t *testing.T) {
-    lab := llmentary.New(t,
+    lm := llmentary.New(t,
         llmentary.WithProxyURL("http://127.0.0.1:7777"),
         llmentary.WithControlURL("http://127.0.0.1:7778"),
     )
 
-    baseURL := lab.OpenAIBaseURL("openai") // http://127.0.0.1:7777/u/openai
-    key, value := lab.Header()             // X-Test-Session: <unique id>
-    baggage := lab.Baggage()               // llmentary.session.id=<id>
-    httpClient := lab.HTTPClient()         // injects X-Test-Session
+    baseURL := lm.OpenAIBaseURL("openai") // http://127.0.0.1:7777/u/openai
+    key, value := lm.Header()             // X-Test-Session: <unique id>
+    baggage := lm.Baggage()               // llmentary.session.id=<id>
+    httpClient := lm.HTTPClient()         // injects X-Test-Session
 
     _, _, _ = baseURL, key, value
     _, _ = baggage, httpClient
 
-    assert := lab.Expect(context.Background()) // waits for quiet session and fails fatally
+    assert := lm.Expect(context.Background()) // waits for quiet session and fails fatally
     assert.CallCount(1)
 }
 ```
@@ -40,13 +42,13 @@ func TestAgent(t *testing.T) {
 - `LLMENTARY_CONTROL_URL` (default `http://127.0.0.1:7778`)
 - `LLMENTARY_CONTROL_TOKEN` for authenticated control APIs
 
-Use `lab.Check(ctx)` for non-fatal assertions (`t.Error`) and `lab.Expect(ctx)` for fatal
+Use `lm.Check(ctx)` for non-fatal assertions (`t.Error`) and `lm.Expect(ctx)` for fatal
 assertions (`t.Fatal`).
 
 ## Query calls
 
 ```go
-trace := lab.Wait(ctx)
+trace := lm.Wait(ctx)
 chat := trace.Query().
     Upstream("openai").
     APIType("chat").
@@ -150,14 +152,8 @@ for custom assertions.
 
 ## Binary resolution
 
-```go
-path, err := llmentary.ResolveBinary()
-proxy, err := llmentary.Start(ctx, llmentary.WithUpstream("openai=https://api.openai.com/v1"))
-```
-
-`ResolveBinary` uses `LLMENTARY_BIN`, then `llmentary` on PATH.
-`DownloadRelease` installs the pinned `ProxyVersion` GitHub Release (`v0.1.0`)
-after verifying `checksums.txt`.
+`ResolveBinary` and `Start` / `StartForTest` locate the proxy as `llmentary` on
+`PATH`, or via `LLMENTARY_BIN`. See [Proxy binary resolution](binaries.md).
 
 ## Two-step tool flows
 
@@ -184,8 +180,8 @@ For Responses, keep the first response stored and send a `function_call_output` 
 ## Fixture testing
 
 See [`examples/go/weather_test.go`](../examples/go/weather_test.go) for a complete
-proxy-backed example using `openai-go` with `lab.OpenAIBaseURL("openai")` and
-`lab.HTTPClient()`. The example starts the proxy via `StartForTest` against a mock
+proxy-backed example using `openai-go` with `lm.OpenAIBaseURL("openai")` and
+`lm.HTTPClient()`. The example starts the proxy via `StartForTest` against a mock
 upstream.
 
 For CI wiring, see [GitHub Actions and CI](ci.md). For proxy flags and control API

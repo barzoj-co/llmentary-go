@@ -26,7 +26,7 @@ func TestClientWaitAndDelete(t *testing.T) {
 			if r.Header.Get("Authorization") != "Bearer secret" {
 				t.Errorf("missing bearer token")
 			}
-			_ = json.NewEncoder(w).Encode(Session{ID: "abc", Calls: []Call{{ID: "c1", Seq: 1}}})
+			_ = json.NewEncoder(w).Encode(sessionPayload{ID: "abc", Calls: []Call{{ID: "c1", Seq: 1}}})
 		case r.Method == http.MethodDelete && r.URL.Path == "/sessions/abc":
 			deleted = true
 			w.WriteHeader(http.StatusNoContent)
