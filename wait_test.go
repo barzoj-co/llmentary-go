@@ -171,6 +171,13 @@ func TestWaitTimeoutErrorMessage(t *testing.T) {
 	}
 }
 
+func TestWaitHTTPTimeoutUsesDefaultsForZero(t *testing.T) {
+	want := DefaultWaitQuiet + DefaultWaitTimeout + waitHTTPPadding
+	if got := waitHTTPTimeout(0, 0); got != want {
+		t.Fatalf("waitHTTPTimeout(0, 0)=%s, want %s", got, want)
+	}
+}
+
 func TestFormatWaitDurationKeepsSeconds(t *testing.T) {
 	if got := formatWaitDuration(90 * time.Second); got != "90s" {
 		t.Fatalf("90s formatted as %q", got)

@@ -58,11 +58,13 @@ func waitQuery(quiet, timeout time.Duration) string {
 }
 
 func waitHTTPTimeout(quiet, timeout time.Duration) time.Duration {
-	d := quiet + timeout + waitHTTPPadding
-	if d < waitHTTPPadding {
-		return waitHTTPPadding
+	if timeout <= 0 {
+		timeout = DefaultWaitTimeout
 	}
-	return d
+	if quiet <= 0 {
+		quiet = DefaultWaitQuiet
+	}
+	return quiet + timeout + waitHTTPPadding
 }
 
 func parseWaitDuration(name, value string) (time.Duration, error) {
@@ -161,6 +163,6 @@ func waitTimeoutError(sessionID string, timeout time.Duration, calls []Call) err
 	if timeout <= 0 {
 		timeout = DefaultWaitTimeout
 	}
-	return fmt.Errorf("wait timed out after %s on session %s (%d calls so far, still active: %d). Raise %s if the graph needs more time.",
+	return fmt.Errorf("wait timed out after %s on session %s (%d calls so far, still active: %d). Raise %s if the graph needs more time",
 		formatWaitDuration(timeout), sessionID, len(calls), countActiveCalls(calls), EnvWaitTimeout)
 }

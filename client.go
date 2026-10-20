@@ -91,8 +91,13 @@ func (c *Client) Wait(ctx context.Context, sessionID string, quiet, timeout time
 	if len(calls) == 0 {
 		if parsed := parseSessionCalls(err); len(parsed) > 0 {
 			calls = parsed
-		} else if fetched, fetchErr := c.Calls(ctx, sessionID); fetchErr == nil {
-			calls = fetched
+		} else {
+			recoveryCtx, recoveryCancel := context.WithTimeout(ctx, httpTimeout)
+			fetched, fetchErr := c.Calls(recoveryCtx, sessionID)
+			recoveryCancel()
+			if fetchErr == nil {
+				calls = fetched
+			}
 		}
 	}
 	return nil, waitTimeoutError(sessionID, timeout, calls)
