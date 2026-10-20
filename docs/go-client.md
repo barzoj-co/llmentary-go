@@ -24,12 +24,13 @@ func TestAgent(t *testing.T) {
     )
 
     baseURL := lm.OpenAIBaseURL("") // http://127.0.0.1:7777/v1 (default openai upstream)
+    pathURL := lm.PathBaseURL("")         // http://127.0.0.1:7777/s/<id>/v1 (no headers)
     key, value := lm.Header()             // X-Test-Session: <unique id>
     baggage := lm.Baggage()               // llmentary.session.id=<id>
     httpClient := lm.HTTPClient()         // injects X-Test-Session
 
-    _, _, _ = baseURL, key, value
-    _, _ = baggage, httpClient
+    _, _, _ = baseURL, pathURL, key
+    _, _, _ = value, baggage, httpClient
 
     assert := lm.Expect(context.Background()) // waits for quiet session and fails fatally
     assert.CallCount(1)
@@ -100,6 +101,18 @@ Other filters:
 - `Errors()`
 - `Retries()`
 - `Index(i)`
+- `OffersTool(name)` / `WithoutTools()`
+- `Since(mark)` after `m := lm.Mark(ctx)`
+
+```go
+mark := lm.Mark(ctx)
+// … next turn …
+assert := lm.Expect(ctx, llmentary.Since(mark))
+router := trace.Query().WithoutTools()
+specialist := trace.Query().OffersTool("get_risks")
+```
+
+`Summary()` prints `#<seq>` so `Mark` / `Since` can be compared to the trace.
 
 Scoped assertions operate only on the filtered calls:
 
@@ -191,8 +204,12 @@ per call. Failures use
 ## Response content assertions
 
 ```go
+assert.PromptContains("SEED_X")
 assert.ResponseContains("done")
 assert.ResponseMatches(`(?i)success`)
+assert.FinalResponseMentionsAny("20", "sunny")
+assert.ToolResultInPrompt("get_weather")
+_ = llmentary.MentionsAny(appAnswer, "20", "sunny")
 assert.ResponseJSONValid()
 assert.ResponseJSONSchemaValid(map[string]any{
     "type": "object",
@@ -258,3 +275,5 @@ upstream.
 
 For CI wiring, see [GitHub Actions and CI](ci.md). For proxy flags and control API
 details, see the [llmentary documentation](https://github.com/barzoj-co/llmentary).
+Black-box setups: [docs/black-box.md](https://github.com/barzoj-co/llmentary/blob/main/docs/black-box.md).
+Trace vs free-text assertions: [docs/assertions-guide.md](https://github.com/barzoj-co/llmentary/blob/main/docs/assertions-guide.md).
