@@ -22,7 +22,11 @@ const (
 	defaultControlURL = "http://127.0.0.1:7778"
 )
 
-type Lab struct {
+// LM is a per-test llmentary helper bound to testing.TB.
+// Create one with New:
+//
+//	lm := llmentary.New(t)
+type LM struct {
 	t          testing.TB
 	client     *Client
 	sessionID  string
@@ -32,9 +36,10 @@ type Lab struct {
 	httpClient *http.Client
 }
 
-type LabOption func(*labConfig)
+// LMOption configures New.
+type LMOption func(*lmConfig)
 
-type labConfig struct {
+type lmConfig struct {
 	controlURL   string
 	proxyURL     string
 	controlToken string
@@ -43,9 +48,10 @@ type labConfig struct {
 	timeout      time.Duration
 }
 
-func New(t testing.TB, opts ...LabOption) *Lab {
+// New starts a unique recording session for t and deletes it in t.Cleanup.
+func New(t testing.TB, opts ...LMOption) *LM {
 	t.Helper()
-	cfg := labConfig{
+	cfg := lmConfig{
 		controlURL: getenvDefault("LLMENTARY_CONTROL_URL", defaultControlURL),
 		proxyURL:   getenvDefault("LLMENTARY_PROXY_URL", defaultProxyURL),
 		quiet:      500 * time.Millisecond,
@@ -65,7 +71,7 @@ func New(t testing.TB, opts ...LabOption) *Lab {
 	if err != nil {
 		t.Fatalf("llmentary: create client: %v", err)
 	}
-	lab := &Lab{
+	lm := &LM{
 		t:          t,
 		client:     client,
 		sessionID:  client.NewSession(),
@@ -77,70 +83,75 @@ func New(t testing.TB, opts ...LabOption) *Lab {
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		_ = lab.client.Delete(ctx, lab.sessionID)
+		_ = lm.client.Delete(ctx, lm.sessionID)
 	})
-	return lab
+	return lm
 }
 
-func WithControlURL(rawURL string) LabOption {
-	return func(c *labConfig) { c.controlURL = rawURL }
+// WithControlURL sets the proxy control API URL (default LLMENTARY_CONTROL_URL or http://127.0.0.1:7778).
+func WithControlURL(rawURL string) LMOption {
+	return func(c *lmConfig) { c.controlURL = rawURL }
 }
 
-func WithProxyURL(rawURL string) LabOption {
-	return func(c *labConfig) { c.proxyURL = rawURL }
+// WithProxyURL sets the proxy listen URL (default LLMENTARY_PROXY_URL or http://127.0.0.1:7777).
+func WithProxyURL(rawURL string) LMOption {
+	return func(c *lmConfig) { c.proxyURL = rawURL }
 }
 
-func WithLabControlToken(token string) LabOption {
-	return func(c *labConfig) { c.controlToken = token }
+// WithLMControlToken sets the control API bearer token for this helper.
+func WithLMControlToken(token string) LMOption {
+	return func(c *lmConfig) { c.controlToken = token }
 }
 
-func WithLabHTTPClient(client *http.Client) LabOption {
-	return func(c *labConfig) { c.httpClient = client }
+// WithLMHTTPClient sets the HTTP client used for control API calls and as the base for HTTPClient.
+func WithLMHTTPClient(client *http.Client) LMOption {
+	return func(c *lmConfig) { c.httpClient = client }
 }
 
-func WithWait(quiet, timeout time.Duration) LabOption {
-	return func(c *labConfig) {
+// WithWait sets the quiet period and timeout used by Wait, Expect, and Check.
+func WithWait(quiet, timeout time.Duration) LMOption {
+	return func(c *lmConfig) {
 		c.quiet = quiet
 		c.timeout = timeout
 	}
 }
 
-func (l *Lab) SessionID() string { return l.sessionID }
+func (lm *LM) SessionID() string { return lm.sessionID }
 
-func (l *Lab) Header() (string, string) { return Header(l.sessionID) }
+func (lm *LM) Header() (string, string) { return Header(lm.sessionID) }
 
-func (l *Lab) Headers() http.Header {
+func (lm *LM) Headers() http.Header {
 	h := http.Header{}
-	key, value := l.Header()
+	key, value := lm.Header()
 	h.Set(key, value)
 	return h
 }
 
-func (l *Lab) Baggage() string {
-	return "llmentary.session.id=" + url.QueryEscape(l.sessionID)
+func (lm *LM) Baggage() string {
+	return "llmentary.session.id=" + url.QueryEscape(lm.sessionID)
 }
 
-func (l *Lab) BaseURL(upstream string) string {
+func (lm *LM) BaseURL(upstream string) string {
 	if upstream == "" {
-		return l.proxyURL
+		return lm.proxyURL
 	}
-	return l.proxyURL + "/u/" + strings.Trim(upstream, "/")
+	return lm.proxyURL + "/u/" + strings.Trim(upstream, "/")
 }
 
-func (l *Lab) OpenAIBaseURL(upstream string) string {
-	return l.BaseURL(upstream)
+func (lm *LM) OpenAIBaseURL(upstream string) string {
+	return lm.BaseURL(upstream)
 }
 
-func (l *Lab) HTTPClient() *http.Client {
+func (lm *LM) HTTPClient() *http.Client {
 	client := http.Client{}
-	if l.httpClient != nil {
-		client = *l.httpClient
+	if lm.httpClient != nil {
+		client = *lm.httpClient
 	}
 	transport := http.DefaultTransport
 	if client.Transport != nil {
 		transport = client.Transport
 	}
-	client.Transport = sessionTransport{sessionID: l.sessionID, base: transport}
+	client.Transport = sessionTransport{sessionID: lm.sessionID, base: transport}
 	return &client
 }
 
@@ -156,34 +167,34 @@ func (t sessionTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	return t.base.RoundTrip(clone)
 }
 
-func (l *Lab) Wait(ctx context.Context) Trace {
-	l.t.Helper()
-	calls, err := l.client.Wait(ctx, l.sessionID, l.quiet, l.timeout)
+func (lm *LM) Wait(ctx context.Context) Trace {
+	lm.t.Helper()
+	calls, err := lm.client.Wait(ctx, lm.sessionID, lm.quiet, lm.timeout)
 	if err != nil {
-		l.t.Fatalf("llmentary: wait for session %s: %v", l.sessionID, err)
+		lm.t.Fatalf("llmentary: wait for session %s: %v", lm.sessionID, err)
 	}
-	return Trace{SessionID: l.sessionID, Calls: calls}
+	return Trace{SessionID: lm.sessionID, Calls: calls}
 }
 
-func (l *Lab) Calls(ctx context.Context) Trace {
-	l.t.Helper()
-	calls, err := l.client.Calls(ctx, l.sessionID)
+func (lm *LM) Calls(ctx context.Context) Trace {
+	lm.t.Helper()
+	calls, err := lm.client.Calls(ctx, lm.sessionID)
 	if err != nil {
-		l.t.Fatalf("llmentary: fetch session %s: %v", l.sessionID, err)
+		lm.t.Fatalf("llmentary: fetch session %s: %v", lm.sessionID, err)
 	}
-	return Trace{SessionID: l.sessionID, Calls: calls}
+	return Trace{SessionID: lm.sessionID, Calls: calls}
 }
 
-func (l *Lab) Expect(ctx context.Context) *Assertions {
-	l.t.Helper()
-	trace := l.Wait(ctx)
-	return &Assertions{t: l.t, trace: trace, fatal: true}
+func (lm *LM) Expect(ctx context.Context) *Assertions {
+	lm.t.Helper()
+	trace := lm.Wait(ctx)
+	return &Assertions{t: lm.t, trace: trace, fatal: true}
 }
 
-func (l *Lab) Check(ctx context.Context) *Assertions {
-	l.t.Helper()
-	trace := l.Wait(ctx)
-	return &Assertions{t: l.t, trace: trace}
+func (lm *LM) Check(ctx context.Context) *Assertions {
+	lm.t.Helper()
+	trace := lm.Wait(ctx)
+	return &Assertions{t: lm.t, trace: trace}
 }
 
 type Trace struct {

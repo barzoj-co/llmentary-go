@@ -72,6 +72,7 @@ Install `actionlint` from the [rhysd/actionlint releases](https://github.com/rhy
 - `examples/go` — proxy-backed example against a mock upstream
 - `e2e` — real OpenAI Chat Completions and Responses flows
 - `docs/go-client.md` — assertion and session API
+- `docs/binaries.md` — proxy binary lookup and `DownloadRelease`
 
 The client talks to the proxy over HTTP only. Do not import proxy/server packages
 from `barzoj-co/llmentary`.

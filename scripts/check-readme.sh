@@ -52,6 +52,51 @@ if [[ "$readme_content" != *"$license_section" ]]; then
   missing=1
 fi
 
+if grep -Fq 'Renamed from llm-test-lab' "$README"; then
+  echo "README.md must not mention the pre-release llm-test-lab rename" >&2
+  missing=1
+fi
+
+if ! grep -Fq 'lm := llmentary.New' "$README"; then
+  echo "README.md Quickstart must use lm := llmentary.New" >&2
+  missing=1
+fi
+
+if grep -Eq '(^|[[:space:]])lab :=' "$README" "${ROOT}/docs/go-client.md" "${ROOT}/examples/go/weather_test.go"; then
+  echo "docs/examples must use lm :=, not lab :=" >&2
+  missing=1
+fi
+
+if [[ "$readme_content" == *"LLMTESTLAB"* ]] || [[ "$readme_content" == *"CI secrets"* ]]; then
+  echo "README.md must not document CI secrets or LLMTESTLAB tokens" >&2
+  missing=1
+fi
+
+if ! grep -Fq 'docs/go-client.md' "$README"; then
+  echo "README.md must link to docs/go-client.md" >&2
+  missing=1
+fi
+
+mapfile -t headings < <(grep -E '^## ' "$README")
+want_headings=(
+  "## Install"
+  "## Quickstart"
+  "## Assertions"
+  "## llmentary repositories"
+  "## License"
+)
+if [[ "${#headings[@]}" -ne "${#want_headings[@]}" ]]; then
+  echo "README.md heading count is ${#headings[@]}, want ${#want_headings[@]}" >&2
+  missing=1
+else
+  for i in "${!want_headings[@]}"; do
+    if [[ "${headings[$i]}" != "${want_headings[$i]}" ]]; then
+      echo "README.md heading $((i + 1)) is ${headings[$i]}, want ${want_headings[$i]}" >&2
+      missing=1
+    fi
+  done
+fi
+
 if [[ "$missing" -ne 0 ]]; then
   exit 1
 fi

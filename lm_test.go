@@ -6,10 +6,44 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestLMSessionHelpers(t *testing.T) {
+	client := &http.Client{Timeout: time.Second}
+	lm := New(t,
+		WithProxyURL("http://127.0.0.1:7777"),
+		WithControlURL("http://127.0.0.1:7778"),
+		WithLMControlToken("token"),
+		WithLMHTTPClient(client),
+		WithWait(time.Millisecond, time.Second),
+	)
+	if lm.SessionID() == "" {
+		t.Fatal("empty session id")
+	}
+	if got := lm.OpenAIBaseURL("openai"); got != "http://127.0.0.1:7777/u/openai" {
+		t.Fatalf("OpenAIBaseURL=%q", got)
+	}
+	if got := lm.BaseURL(""); got != "http://127.0.0.1:7777" {
+		t.Fatalf("BaseURL=%q", got)
+	}
+	key, value := lm.Header()
+	if key != SessionHeaderName || value != lm.SessionID() {
+		t.Fatalf("Header()=%s %s", key, value)
+	}
+	if got := lm.Headers().Get(SessionHeaderName); got != lm.SessionID() {
+		t.Fatalf("Headers()=%q", got)
+	}
+	if !strings.Contains(lm.Baggage(), lm.SessionID()) {
+		t.Fatalf("Baggage()=%q", lm.Baggage())
+	}
+	if lm.HTTPClient() == nil {
+		t.Fatal("HTTPClient is nil")
+	}
+}
 
 func TestAssertionsToolAndMetadata(t *testing.T) {
 	trace := fixtureTrace()
