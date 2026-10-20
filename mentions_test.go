@@ -114,6 +114,27 @@ func TestPromptTextSystemAndInstructions(t *testing.T) {
 	}
 }
 
+func TestToolResultInPromptMatchesLaterCallID(t *testing.T) {
+	result := `{"city":"Paris","echoed":true}`
+	trace := Trace{SessionID: "s", Calls: []Call{
+		{
+			Seq:        1,
+			Normalized: Normalized{ToolCalls: []ToolCall{{ID: "call_old", Name: "echo_city"}}},
+		},
+		{
+			Seq:        2,
+			Normalized: Normalized{ToolCalls: []ToolCall{{ID: "call_new", Name: "echo_city"}}},
+		},
+		{
+			Seq:        3,
+			RawRequest: []byte(`{"messages":[{"role":"user","content":"again"},{"role":"tool","tool_call_id":"call_new","content":` + jsonQuote(result) + `}]}`),
+			Normalized: Normalized{ToolResultsIn: []ToolResult{{CallID: "call_new", Name: "echo_city"}}},
+		},
+	}}
+	a := &Assertions{t: t, trace: trace, fatal: true}
+	a.ToolResultInPrompt("echo_city")
+}
+
 func TestFindToolResultNestedToolUseID(t *testing.T) {
 	raw := []byte(`{"messages":[{"role":"user","content":[{"type":"tool_result","tool_use_id":"use_1","content":"NESTED_RESULT"}]}]}`)
 	if got := toolResultContent(raw, "use_1", "weather"); got != "NESTED_RESULT" {

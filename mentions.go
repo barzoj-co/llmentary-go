@@ -244,25 +244,17 @@ func (a *Assertions) FinalResponseMentionsAny(candidates ...string) bool {
 // result content verbatim (stronger, name-based form of ToolResultFedBack).
 func (a *Assertions) ToolResultInPrompt(toolName string) bool {
 	a.t.Helper()
-	var callID string
-	seen := false
-	for _, call := range a.trace.Calls {
-		if !seen {
-			for _, tool := range call.Normalized.ToolCalls {
-				if tool.Name == toolName {
-					callID = tool.ID
-					seen = true
-					break
+	for i, call := range a.trace.Calls {
+		for _, tool := range call.Normalized.ToolCalls {
+			if tool.Name != toolName {
+				continue
+			}
+			for _, next := range a.trace.Calls[i+1:] {
+				content := toolResultContent(next.RawRequest, tool.ID, toolName)
+				if content != "" && strings.Contains(next.PromptText(), content) {
+					return true
 				}
 			}
-			continue
-		}
-		content := toolResultContent(call.RawRequest, callID, toolName)
-		if content == "" {
-			continue
-		}
-		if strings.Contains(call.PromptText(), content) {
-			return true
 		}
 	}
 	return a.fail("expected the next request after tool %q to carry its result verbatim", toolName)
