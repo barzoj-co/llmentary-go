@@ -49,13 +49,18 @@ type sessionConfig struct {
 }
 
 // New starts a unique recording session for t and deletes it in t.Cleanup.
+// Wait defaults are 30s / 500ms, overridable with LLMENTARY_WAIT_TIMEOUT,
+// LLMENTARY_WAIT_QUIET, or WithWait.
 func New(t testing.TB, opts ...Option) *Session {
 	t.Helper()
 	cfg := sessionConfig{
 		controlURL: getenvDefault("LLMENTARY_CONTROL_URL", defaultControlURL),
 		proxyURL:   getenvDefault("LLMENTARY_PROXY_URL", defaultProxyURL),
-		quiet:      500 * time.Millisecond,
-		timeout:    30 * time.Second,
+		quiet:      DefaultWaitQuiet,
+		timeout:    DefaultWaitTimeout,
+	}
+	if err := applyWaitEnv(&cfg.quiet, &cfg.timeout); err != nil {
+		t.Fatalf("llmentary: %v", err)
 	}
 	for _, opt := range opts {
 		opt(&cfg)
@@ -111,6 +116,7 @@ func WithSessionHTTPClient(client *http.Client) Option {
 }
 
 // WithWait sets the quiet period and timeout used by Wait, Expect, and Check.
+// It overrides LLMENTARY_WAIT_QUIET / LLMENTARY_WAIT_TIMEOUT for this session.
 func WithWait(quiet, timeout time.Duration) Option {
 	return func(c *sessionConfig) {
 		c.quiet = quiet

@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -71,18 +72,35 @@ func (c *Client) Calls(ctx context.Context, sessionID string) ([]Call, error) {
 }
 
 func (c *Client) Wait(ctx context.Context, sessionID string, quiet, timeout time.Duration) ([]Call, error) {
-	q := url.Values{}
-	if quiet > 0 {
-		q.Set("quiet", quiet.String())
-	}
-	if timeout > 0 {
-		q.Set("timeout", timeout.String())
-	}
+	httpTimeout := waitHTTPTimeout(quiet, timeout)
+	waitCtx, cancel := context.WithTimeout(ctx, httpTimeout)
+	defer cancel()
+
 	var session sessionPayload
-	if err := c.getJSON(ctx, "/sessions/"+url.PathEscape(sessionID)+"/wait", q, &session); err != nil {
+	err := c.getJSONQuery(waitCtx, c.waitHTTPClient(httpTimeout), "/sessions/"+url.PathEscape(sessionID)+"/wait", waitQuery(quiet, timeout), &session)
+	if err == nil {
+		return session.Calls, nil
+	}
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	if !isWaitTimeout(err) {
 		return nil, err
 	}
-	return session.Calls, nil
+	calls := session.Calls
+	if len(calls) == 0 {
+		if parsed := parseSessionCalls(err); len(parsed) > 0 {
+			calls = parsed
+		} else {
+			recoveryCtx, recoveryCancel := context.WithTimeout(ctx, httpTimeout)
+			fetched, fetchErr := c.Calls(recoveryCtx, sessionID)
+			recoveryCancel()
+			if fetchErr == nil {
+				calls = fetched
+			}
+		}
+	}
+	return nil, waitTimeoutError(sessionID, timeout, calls)
 }
 
 func (c *Client) OTLP(ctx context.Context, sessionID string) (json.RawMessage, error) {
@@ -112,24 +130,81 @@ func (c *Client) Delete(ctx context.Context, sessionID string) error {
 	return nil
 }
 
+type statusError struct {
+	op     string
+	status int
+	body   string
+}
+
+func (e *statusError) Error() string {
+	return fmt.Sprintf("llmentary %s failed: status=%d body=%s", e.op, e.status, e.body)
+}
+
 func (c *Client) getJSON(ctx context.Context, path string, q url.Values, out any) error {
+	raw := ""
+	if len(q) > 0 {
+		raw = q.Encode()
+	}
+	return c.getJSONQuery(ctx, c.httpClient, path, raw, out)
+}
+
+func (c *Client) getJSONQuery(ctx context.Context, hc *http.Client, path, rawQuery string, out any) error {
+	if hc == nil {
+		hc = http.DefaultClient
+	}
 	u := c.resolve(path)
-	u.RawQuery = q.Encode()
+	u.RawQuery = rawQuery
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
 		return err
 	}
 	c.authorize(req)
-	resp, err := c.httpClient.Do(req)
+	resp, err := hc.Do(req)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return fmt.Errorf("llmentary get failed: status=%d body=%s", resp.StatusCode, string(body))
+		return &statusError{op: "get", status: resp.StatusCode, body: string(body)}
 	}
 	return json.NewDecoder(resp.Body).Decode(out)
+}
+
+func (c *Client) waitHTTPClient(needed time.Duration) *http.Client {
+	base := c.httpClient
+	if base == nil {
+		base = http.DefaultClient
+	}
+	if base.Timeout == 0 || base.Timeout >= needed {
+		return base
+	}
+	return &http.Client{
+		Transport:     base.Transport,
+		CheckRedirect: base.CheckRedirect,
+		Jar:           base.Jar,
+		Timeout:       needed,
+	}
+}
+
+func isWaitTimeout(err error) bool {
+	var se *statusError
+	if errors.As(err, &se) && se.status == http.StatusGatewayTimeout {
+		return true
+	}
+	return errors.Is(err, context.DeadlineExceeded)
+}
+
+func parseSessionCalls(err error) []Call {
+	var se *statusError
+	if !errors.As(err, &se) || se.body == "" {
+		return nil
+	}
+	var payload sessionPayload
+	if json.Unmarshal([]byte(se.body), &payload) != nil {
+		return nil
+	}
+	return payload.Calls
 }
 
 func (c *Client) resolve(path string) *url.URL {
