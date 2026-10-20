@@ -121,6 +121,23 @@ assert.TokensBelow(1000)
 See [docs/go-client.md](docs/go-client.md) for the full session, query, and
 assertion API.
 
+## Waiting for calls
+
+The proxy `/sessions/{id}/wait` endpoint reads `timeout` and `quiet` as Go
+duration strings. All clients send exactly those two query parameters, for
+example `timeout=30s&quiet=500ms`.
+
+| Setting | Default | Environment variable |
+|---|---|---|
+| Wait timeout | `30s` | `LLMENTARY_WAIT_TIMEOUT` |
+| Quiet period | `500ms` | `LLMENTARY_WAIT_QUIET` |
+
+Each variable accepts a Go duration (`45s`, `200ms`) or bare seconds (`45`,
+`0.2`). A wait timeout is a clear error: `wait timed out after 30s on session
+X (k calls so far, still active: n). Raise LLMENTARY_WAIT_TIMEOUT` if the
+graph needs more time. The client HTTP timeout is `timeout + quiet + 5s` so
+the request is not aborted before the proxy answers.
+
 <!-- llmentary-repos:start -->
 ## llmentary repositories
 

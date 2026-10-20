@@ -149,6 +149,28 @@ func TestE2EResponsesToolFlow(t *testing.T) {
 	responses.NoRetries()
 }
 
+func TestE2EStreamingWaitDefaults(t *testing.T) {
+	apiKey := requireOpenAIKey(t)
+	model := e2eModel()
+	lm := newSessionDefaults(t)
+	body := []byte(`{
+		"model":` + strconv.Quote(model) + `,
+		"messages":[{"role":"user","content":"Reply with the single word hi."}],
+		"stream":true,
+		"temperature":0
+	}`)
+	stream := postOpenAI(t, apiKey, lm, "/chat/completions", body)
+	if !bytes.Contains(stream, []byte("data:")) {
+		t.Fatalf("expected chat SSE stream, got %q", stream)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	trace := lm.Wait(ctx)
+	if len(trace.Calls) < 1 {
+		t.Fatalf("wait with default timeout/quiet returned no calls:\n%s", trace.Summary())
+	}
+}
+
 func TestE2EChatCompletionsNonStreaming(t *testing.T) {
 	apiKey := requireOpenAIKey(t)
 	model := e2eModel()
@@ -236,6 +258,16 @@ func postOpenAI(t *testing.T, apiKey string, lm *llmentary.Session, path string,
 
 func newSession(t *testing.T) *llmentary.Session {
 	t.Helper()
+	return newSessionWithWait(t, llmentary.WithWait(200*time.Millisecond, 30*time.Second))
+}
+
+func newSessionDefaults(t *testing.T) *llmentary.Session {
+	t.Helper()
+	return newSessionWithWait(t)
+}
+
+func newSessionWithWait(t *testing.T, opts ...llmentary.Option) *llmentary.Session {
+	t.Helper()
 	if _, err := llmentary.ResolveBinary(); err != nil {
 		t.Fatalf("llmentary proxy binary is required for e2e: %v", err)
 	}
@@ -243,11 +275,12 @@ func newSession(t *testing.T) *llmentary.Session {
 		llmentary.WithUpstream("openai=https://api.openai.com/v1"),
 		llmentary.WithStartTimeout(15*time.Second),
 	)
-	return llmentary.New(t,
+	sessionOpts := []llmentary.Option{
 		llmentary.WithProxyURL(proxy.ProxyURL),
 		llmentary.WithControlURL(proxy.ControlURL),
-		llmentary.WithWait(200*time.Millisecond, 30*time.Second),
-	)
+	}
+	sessionOpts = append(sessionOpts, opts...)
+	return llmentary.New(t, sessionOpts...)
 }
 
 func e2eModel() string {

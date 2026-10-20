@@ -82,6 +82,7 @@ want_headings=(
   "## Install"
   "## Quickstart"
   "## Assertions"
+  "## Waiting for calls"
   "## llmentary repositories"
   "## License"
 )

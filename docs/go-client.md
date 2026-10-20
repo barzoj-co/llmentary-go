@@ -41,9 +41,31 @@ func TestAgent(t *testing.T) {
 - `LLMENTARY_PROXY_URL` (default `http://127.0.0.1:7777`)
 - `LLMENTARY_CONTROL_URL` (default `http://127.0.0.1:7778`)
 - `LLMENTARY_CONTROL_TOKEN` for authenticated control APIs
+- `LLMENTARY_WAIT_TIMEOUT` (default `30s`)
+- `LLMENTARY_WAIT_QUIET` (default `500ms`)
 
 Use `lm.Check(ctx)` for non-fatal assertions (`t.Error`) and `lm.Expect(ctx)` for fatal
-assertions (`t.Fatal`).
+assertions (`t.Fatal`). Override wait timing for one session with
+`WithWait(quiet, timeout)`.
+
+## Waiting for calls
+
+The proxy `/sessions/{id}/wait` endpoint reads `timeout` and `quiet` as Go
+duration strings. All clients send exactly those two query parameters, for
+example `timeout=30s&quiet=500ms`.
+
+| Setting | Default | Environment variable |
+|---|---|---|
+| Wait timeout | `30s` | `LLMENTARY_WAIT_TIMEOUT` |
+| Quiet period | `500ms` | `LLMENTARY_WAIT_QUIET` |
+
+Each variable accepts a Go duration (`45s`, `200ms`) or bare seconds (`45`,
+`0.2`). A wait timeout is a clear error: `wait timed out after 30s on session
+X (k calls so far, still active: n). Raise LLMENTARY_WAIT_TIMEOUT` if the
+graph needs more time. The client HTTP timeout is `timeout + quiet + 5s` so
+the request is not aborted before the proxy answers.
+
+`WithWait(quiet, timeout)` overrides the environment for one session.
 
 ## Query calls
 
