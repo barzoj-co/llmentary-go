@@ -44,15 +44,43 @@ func formatWaitDuration(d time.Duration) string {
 	return fmt.Sprintf("%dms", ms)
 }
 
+// WaitOptions configures /sessions/{id}/wait beyond quiet/timeout.
+type WaitOptions struct {
+	MinCalls int
+}
+
+// WaitOption mutates WaitOptions. Used by Client.Wait, Session.Wait,
+// Session.Expect, and Session.Check.
+type WaitOption func(*WaitOptions)
+
+// MinCalls sets wait?min_calls=N. The proxy returns only after at least N
+// finished calls and the quiet period. Default 0 (omit the parameter).
+func MinCalls(n int) WaitOption {
+	return func(o *WaitOptions) { o.MinCalls = n }
+}
+
+func applyWaitOptions(opts []WaitOption) WaitOptions {
+	var o WaitOptions
+	for _, opt := range opts {
+		if opt != nil {
+			opt(&o)
+		}
+	}
+	return o
+}
+
 // waitQuery is the exact control-API query string. Parameter order is
-// timeout then quiet so it matches the other clients and A1/A6.
-func waitQuery(quiet, timeout time.Duration) string {
+// timeout, quiet, then min_calls so it matches the other clients.
+func waitQuery(quiet, timeout time.Duration, minCalls int) string {
 	var parts []string
 	if timeout > 0 {
 		parts = append(parts, "timeout="+formatWaitDuration(timeout))
 	}
 	if quiet > 0 {
 		parts = append(parts, "quiet="+formatWaitDuration(quiet))
+	}
+	if minCalls > 0 {
+		parts = append(parts, fmt.Sprintf("min_calls=%d", minCalls))
 	}
 	return strings.Join(parts, "&")
 }
@@ -159,10 +187,18 @@ func countActiveCalls(calls []Call) int {
 	return n
 }
 
-func waitTimeoutError(sessionID string, timeout time.Duration, calls []Call) error {
+func waitTimeoutError(sessionID string, timeout time.Duration, calls []Call, minCalls, callsSeen int) error {
 	if timeout <= 0 {
 		timeout = DefaultWaitTimeout
 	}
-	return fmt.Errorf("wait timed out after %s on session %s (%d calls so far, still active: %d). Raise %s if the graph needs more time",
-		formatWaitDuration(timeout), sessionID, len(calls), countActiveCalls(calls), EnvWaitTimeout)
+	if callsSeen == 0 {
+		callsSeen = len(calls)
+	}
+	return &WaitTimeoutError{
+		SessionID: sessionID,
+		Timeout:   timeout,
+		Calls:     calls,
+		CallsSeen: callsSeen,
+		MinCalls:  minCalls,
+	}
 }

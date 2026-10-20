@@ -88,6 +88,133 @@ type Normalized struct {
 	ClientAborted      bool            `json:"client_aborted,omitempty"`
 	ParserWarnings     []string        `json:"parser_warnings,omitempty"`
 	Raw                json.RawMessage `json:"raw,omitempty"`
+	// Validation is per-call spec-check metadata. It is not a finding list.
+	// Empty spec_violations with validation present is clean (chatservice run 1).
+	Validation *Validation `json:"validation,omitempty"`
+	// SpecViolations is a pointer so JSON absent (not checked) differs from [].
+	SpecViolations *[]SpecViolation `json:"spec_violations,omitempty"`
+	IgnoredFields  *[]IgnoredField  `json:"ignored_fields,omitempty"`
+}
+
+// Validation is the spec-check metadata block on normalized.validation.
+// It says whether the call was checked and how, not what was found.
+type Validation struct {
+	Mode                  string `json:"mode,omitempty"`
+	Profile               string `json:"profile,omitempty"`
+	SpecSHA               string `json:"spec_sha,omitempty"`
+	SchemaSubsetRetrieved string `json:"schema_subset_retrieved,omitempty"`
+	RequestChecked        bool   `json:"request_checked,omitempty"`
+	ResponseChecked       bool   `json:"response_checked,omitempty"`
+	SkippedReason         string `json:"skipped_reason,omitempty"`
+	DurationUS            int64  `json:"duration_us,omitempty"`
+	Truncated             bool   `json:"truncated,omitempty"`
+}
+
+// SpecViolation is one schema/spec finding from normalized.spec_violations.
+type SpecViolation struct {
+	Side       string `json:"side,omitempty"`
+	Source     string `json:"source,omitempty"`
+	Path       string `json:"path,omitempty"`
+	Pointer    string `json:"pointer,omitempty"`
+	Keyword    string `json:"keyword,omitempty"`
+	Message    string `json:"message,omitempty"`
+	Profile    string `json:"profile,omitempty"`
+	SchemaRef  string `json:"schema_ref,omitempty"`
+	Offset     *int   `json:"offset,omitempty"`
+	EventIndex *int   `json:"event_index,omitempty"`
+}
+
+// IgnoredField is one normalized.ignored_fields entry (for example vendor
+// keywords such as enumDescriptions).
+type IgnoredField struct {
+	Side     string `json:"side,omitempty"`
+	Kind     string `json:"kind,omitempty"`
+	Path     string `json:"path,omitempty"`
+	Pointer  string `json:"pointer,omitempty"`
+	Severity string `json:"severity,omitempty"`
+	Keyword  string `json:"keyword,omitempty"`
+	Message  string `json:"message,omitempty"`
+}
+
+// SessionInfo is one row from GET /sessions (no call bodies).
+type SessionInfo struct {
+	ID             string     `json:"id"`
+	Calls          int        `json:"calls"`
+	Active         int        `json:"active"`
+	Sources        []string   `json:"sources,omitempty"`
+	FirstStartedAt *time.Time `json:"first_started_at,omitempty"`
+	LastEndedAt    *time.Time `json:"last_ended_at,omitempty"`
+}
+
+// ProxyConfig is the GET /config payload. Version and upstreams are the
+// fields the client relies on; extra keys are ignored.
+type ProxyConfig struct {
+	Version   string
+	Upstreams map[string]string
+}
+
+func (c *ProxyConfig) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if v, ok := raw["version"]; ok {
+		var version string
+		if err := json.Unmarshal(v, &version); err != nil {
+			return err
+		}
+		c.Version = version
+	}
+	if u, ok := raw["upstreams"]; ok {
+		upstreams, err := parseConfigUpstreams(u)
+		if err != nil {
+			return err
+		}
+		c.Upstreams = upstreams
+	}
+	return nil
+}
+
+func parseConfigUpstreams(raw json.RawMessage) (map[string]string, error) {
+	var asMap map[string]string
+	if err := json.Unmarshal(raw, &asMap); err == nil && asMap != nil {
+		return asMap, nil
+	}
+	var asAnyMap map[string]any
+	if err := json.Unmarshal(raw, &asAnyMap); err == nil && asAnyMap != nil {
+		out := make(map[string]string, len(asAnyMap))
+		for name, value := range asAnyMap {
+			switch typed := value.(type) {
+			case string:
+				out[name] = typed
+			case map[string]any:
+				if url, _ := typed["url"].(string); url != "" {
+					out[name] = url
+					continue
+				}
+				if url, _ := typed["base_url"].(string); url != "" {
+					out[name] = url
+				}
+			}
+		}
+		if len(out) > 0 {
+			return out, nil
+		}
+	}
+	var asList []struct {
+		Name string `json:"name"`
+		URL  string `json:"url"`
+	}
+	if err := json.Unmarshal(raw, &asList); err == nil {
+		out := make(map[string]string, len(asList))
+		for _, item := range asList {
+			if item.Name != "" {
+				out[item.Name] = item.URL
+			}
+		}
+		return out, nil
+	}
+	return nil, nil
 }
 
 type Model struct {

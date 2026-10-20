@@ -7,6 +7,7 @@ package llmentary_test
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -76,6 +77,7 @@ func TestE2EChatCompletionsToolFlow(t *testing.T) {
 	chat.TTFTBelow(10 * time.Second)
 	chat.LatencyBelow(30 * time.Second)
 	chat.NoRetries()
+	assert.NoSpecViolations()
 }
 
 func TestE2EResponsesToolFlow(t *testing.T) {
@@ -171,6 +173,146 @@ func TestE2EStreamingWaitDefaults(t *testing.T) {
 	}
 }
 
+func TestE2EWaitMinCalls(t *testing.T) {
+	apiKey := requireOpenAIKey(t)
+	model := e2eModel()
+	lm := newSession(t)
+
+	errc := make(chan error, 1)
+	go func() {
+		time.Sleep(1500 * time.Millisecond)
+		chatBody := []byte(`{
+			"model":` + strconv.Quote(model) + `,
+			"messages":[{"role":"user","content":"Reply with the single word hi."}],
+			"stream":true,
+			"temperature":0
+		}`)
+		stream, err := doOpenAI(apiKey, lm, "/chat/completions", chatBody)
+		if err != nil || !bytes.Contains(stream, []byte("data:")) {
+			errc <- fmt.Errorf("chat stream: %w", err)
+			return
+		}
+		respBody := []byte(`{
+			"model":` + strconv.Quote(model) + `,
+			"input":"Reply with the single word hi.",
+			"stream":true,
+			"temperature":0
+		}`)
+		stream, err = doOpenAI(apiKey, lm, "/responses", respBody)
+		if err != nil || !bytes.Contains(stream, []byte("event:")) {
+			errc <- fmt.Errorf("responses stream: %w", err)
+			return
+		}
+		errc <- nil
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	trace := lm.Wait(ctx, llmentary.MinCalls(2))
+	if err := <-errc; err != nil {
+		t.Fatal(err)
+	}
+	if len(trace.Calls) < 2 {
+		t.Fatalf("min_calls=2 returned %d calls:\n%s", len(trace.Calls), trace.Summary())
+	}
+	for _, call := range trace.Calls {
+		if call.Normalized.Usage == nil {
+			t.Fatalf("call #%d missing usage:\n%s", call.Seq, trace.Summary())
+		}
+	}
+}
+
+func TestE2EDefaultUpstream(t *testing.T) {
+	apiKey := requireOpenAIKey(t)
+	model := e2eModel()
+	lm := newSessionDefaultUpstream(t)
+	body := []byte(`{
+		"model":` + strconv.Quote(model) + `,
+		"messages":[{"role":"user","content":"Reply with the single word hi."}],
+		"stream":true,
+		"temperature":0
+	}`)
+	req, err := http.NewRequest(http.MethodPost, lm.OpenAIBaseURL("")+"/chat/completions", bytes.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	req.Header.Set("Content-Type", "application/json")
+	key, value := lm.Header()
+	req.Header.Set(key, value)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stream, err := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("default-upstream openai status=%d", resp.StatusCode)
+	}
+	if !bytes.Contains(stream, []byte("data:")) {
+		t.Fatalf("expected chat SSE stream from default upstream")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	trace := lm.Wait(ctx)
+	if len(trace.Calls) < 1 {
+		t.Fatalf("default upstream recorded no calls:\n%s", trace.Summary())
+	}
+	up := trace.Calls[0].Upstream.URL
+	if strings.Contains(up, "/v1/v1/") {
+		t.Fatalf("default upstream produced /v1/v1: %s", up)
+	}
+	if trace.Calls[0].Normalized.Usage == nil {
+		t.Fatalf("default upstream call missing usage:\n%s", trace.Summary())
+	}
+}
+
+func TestE2EUnknownNestedFieldSpecViolation(t *testing.T) {
+	apiKey := requireOpenAIKey(t)
+	model := e2eModel()
+	lm := newSession(t)
+	body := []byte(`{
+		"model":` + strconv.Quote(model) + `,
+		"messages":[{"role":"user","content":"Reply with the single word hi.","llmentary_probe":true}],
+		"stream":false,
+		"temperature":0
+	}`)
+	req, err := http.NewRequest(http.MethodPost, lm.OpenAIBaseURL("openai")+"/chat/completions", bytes.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	req.Header.Set("Content-Type", "application/json")
+	key, value := lm.Header()
+	req.Header.Set(key, value)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("unknown nested field should be 200 upstream, got %d", resp.StatusCode)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	trace := lm.Wait(ctx)
+	tb := &e2eRecorder{TB: t}
+	trace.Query().Check(tb).NoSpecViolations()
+	if !tb.failed {
+		t.Fatal("NoSpecViolations should fail for llmentary_probe")
+	}
+	joined := strings.Join(tb.messages, "\n")
+	for _, want := range []string{"#1", "request", "llmentary_probe"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("contract message missing %q:\n%s", want, joined)
+		}
+	}
+}
+
 func TestE2EChatCompletionsNonStreaming(t *testing.T) {
 	apiKey := requireOpenAIKey(t)
 	model := e2eModel()
@@ -233,9 +375,17 @@ func requireOpenAIKey(t *testing.T) string {
 
 func postOpenAI(t *testing.T, apiKey string, lm *llmentary.Session, path string, body []byte) []byte {
 	t.Helper()
-	req, err := http.NewRequest(http.MethodPost, lm.OpenAIBaseURL("openai")+path, bytes.NewReader(body))
+	stream, err := doOpenAI(apiKey, lm, path, body)
 	if err != nil {
 		t.Fatal(err)
+	}
+	return stream
+}
+
+func doOpenAI(apiKey string, lm *llmentary.Session, path string, body []byte) ([]byte, error) {
+	req, err := http.NewRequest(http.MethodPost, lm.OpenAIBaseURL("openai")+path, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
 	}
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 	req.Header.Set("Content-Type", "application/json")
@@ -243,17 +393,17 @@ func postOpenAI(t *testing.T, apiKey string, lm *llmentary.Session, path string,
 	req.Header.Set(key, value)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		t.Fatal(err)
+		return nil, err
 	}
 	stream, err := io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
 	if err != nil {
-		t.Fatal(err)
+		return nil, err
 	}
 	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("openai status=%d body=%s", resp.StatusCode, string(stream))
+		return stream, fmt.Errorf("openai status=%d", resp.StatusCode)
 	}
-	return stream
+	return stream, nil
 }
 
 func newSession(t *testing.T) *llmentary.Session {
@@ -268,13 +418,24 @@ func newSessionDefaults(t *testing.T) *llmentary.Session {
 
 func newSessionWithWait(t *testing.T, opts ...llmentary.Option) *llmentary.Session {
 	t.Helper()
+	return newSessionOnProxy(t, true, opts...)
+}
+
+func newSessionDefaultUpstream(t *testing.T) *llmentary.Session {
+	t.Helper()
+	return newSessionOnProxy(t, false, llmentary.WithWait(200*time.Millisecond, 30*time.Second))
+}
+
+func newSessionOnProxy(t *testing.T, namedUpstream bool, opts ...llmentary.Option) *llmentary.Session {
+	t.Helper()
 	if _, err := llmentary.ResolveBinary(); err != nil {
 		t.Fatalf("llmentary proxy binary is required for e2e: %v", err)
 	}
-	proxy := llmentary.StartForTest(t,
-		llmentary.WithUpstream("openai=https://api.openai.com/v1"),
-		llmentary.WithStartTimeout(15*time.Second),
-	)
+	startOpts := []llmentary.StartOption{llmentary.WithStartTimeout(15 * time.Second)}
+	if namedUpstream {
+		startOpts = append(startOpts, llmentary.WithUpstream("openai=https://api.openai.com/v1"))
+	}
+	proxy := llmentary.StartForTest(t, startOpts...)
 	sessionOpts := []llmentary.Option{
 		llmentary.WithProxyURL(proxy.ProxyURL),
 		llmentary.WithControlURL(proxy.ControlURL),
@@ -282,6 +443,28 @@ func newSessionWithWait(t *testing.T, opts ...llmentary.Option) *llmentary.Sessi
 	sessionOpts = append(sessionOpts, opts...)
 	return llmentary.New(t, sessionOpts...)
 }
+
+type e2eRecorder struct {
+	testing.TB
+	messages []string
+	failed   bool
+}
+
+func (f *e2eRecorder) Helper() {}
+
+func (f *e2eRecorder) Error(args ...any) {
+	f.failed = true
+	f.messages = append(f.messages, fmt.Sprint(args...))
+}
+
+func (f *e2eRecorder) Errorf(format string, args ...any) {
+	f.failed = true
+	f.messages = append(f.messages, fmt.Sprintf(format, args...))
+}
+
+func (f *e2eRecorder) Fatal(args ...any) { f.Error(args...) }
+
+func (f *e2eRecorder) Fatalf(format string, args ...any) { f.Errorf(format, args...) }
 
 func e2eModel() string {
 	if model := os.Getenv("OPENAI_E2E_MODEL"); model != "" {

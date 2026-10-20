@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -70,5 +71,107 @@ func TestClientHTTPErrorIncludesStatus(t *testing.T) {
 	}
 	if _, err := c.Calls(context.Background(), "x"); err == nil {
 		t.Fatal("expected error")
+	}
+}
+
+func TestListSessionsAndConfig(t *testing.T) {
+	var gotSource string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/sessions":
+			gotSource = r.URL.Query().Get("source")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"sessions": []SessionInfo{{ID: "default", Calls: 2, Active: 0, Sources: []string{"default"}}},
+			})
+		case "/config":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"version":   "0.2.0-test",
+				"upstreams": map[string]string{"openai": "https://api.openai.com/v1"},
+			})
+		default:
+			t.Errorf("unexpected %s", r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	c, err := NewClient(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	list, err := c.ListSessions(context.Background(), Source("header"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotSource != "header" || len(list) != 1 || list[0].ID != "default" || list[0].Calls != 2 {
+		t.Fatalf("source=%q list=%+v", gotSource, list)
+	}
+	cfg, err := c.Config(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Version != "0.2.0-test" || cfg.Upstreams["openai"] != "https://api.openai.com/v1" {
+		t.Fatalf("config=%+v", cfg)
+	}
+	version, err := c.Version(context.Background())
+	if err != nil || version != "0.2.0-test" {
+		t.Fatalf("version=%q err=%v", version, err)
+	}
+}
+
+func TestCallsSessionNotFound(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/sessions/missing":
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"error":{"type":"session_not_found","message":"no calls recorded for session \"missing\"; known sessions: GET /sessions"}}`))
+		case r.URL.Path == "/sessions":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"sessions": []SessionInfo{{ID: "known-a"}, {ID: "known-b"}},
+			})
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	c, err := NewClient(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = c.Calls(context.Background(), "missing")
+	if !IsSessionNotFound(err) {
+		t.Fatalf("err=%v", err)
+	}
+	for _, want := range []string{"no calls recorded for session missing", "known-a", "known-b"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error %q missing %q", err, want)
+		}
+	}
+}
+
+func TestWaitSendsMinCalls(t *testing.T) {
+	var gotQuery string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/wait") {
+			gotQuery = r.URL.RawQuery
+			_ = json.NewEncoder(w).Encode(sessionPayload{ID: "s", Calls: []Call{{ID: "c1"}, {ID: "c2"}}})
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	t.Cleanup(srv.Close)
+	c, err := NewClient(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls, err := c.Wait(context.Background(), "s", 100*time.Millisecond, time.Second, MinCalls(2))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(calls) != 2 {
+		t.Fatalf("calls=%d", len(calls))
+	}
+	if gotQuery != "timeout=1s&quiet=100ms&min_calls=2" {
+		t.Fatalf("query=%q", gotQuery)
 	}
 }

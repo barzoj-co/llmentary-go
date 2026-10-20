@@ -23,7 +23,7 @@ func TestAgent(t *testing.T) {
         llmentary.WithControlURL("http://127.0.0.1:7778"),
     )
 
-    baseURL := lm.OpenAIBaseURL("openai") // http://127.0.0.1:7777/u/openai
+    baseURL := lm.OpenAIBaseURL("") // http://127.0.0.1:7777/v1 (default openai upstream)
     key, value := lm.Header()             // X-Test-Session: <unique id>
     baggage := lm.Baggage()               // llmentary.session.id=<id>
     httpClient := lm.HTTPClient()         // injects X-Test-Session
@@ -50,9 +50,20 @@ assertions (`t.Fatal`). Override wait timing for one session with
 
 ## Waiting for calls
 
-The proxy `/sessions/{id}/wait` endpoint reads `timeout` and `quiet` as Go
-duration strings. All clients send exactly those two query parameters, for
-example `timeout=30s&quiet=500ms`.
+The proxy `/sessions/{id}/wait` endpoint reads `timeout`, `quiet`, and optional
+`min_calls`. Example: `timeout=30s&quiet=500ms&min_calls=2`.
+
+```go
+trace := lm.Wait(ctx, llmentary.MinCalls(2))
+assert := lm.Expect(ctx, llmentary.MinCalls(2))
+```
+
+`ListSessions` is `GET /sessions`. A 404 from `GET /sessions/{id}` is
+`*llmentary.SessionNotFoundError` (`llmentary.IsSessionNotFound`). Expect/Check
+on a session that never recorded a call fail with
+`no calls recorded for session <id>; known sessions: …`.
+
+`lm.Version(ctx)` / `client.Version(ctx)` reads `GET /config` `version`.
 
 | Setting | Default | Environment variable |
 |---|---|---|
@@ -66,6 +77,9 @@ graph needs more time. The client HTTP timeout is `timeout + quiet + 5s` so
 the request is not aborted before the proxy answers.
 
 `WithWait(quiet, timeout)` overrides the environment for one session.
+`Start` / `StartForTest` no longer require `WithUpstream`; the proxy defaults to
+`openai=https://api.openai.com/v1`. `OpenAIBaseURL("")` is `{proxy}/v1`.
+Named upstreams still use `OpenAIBaseURL("openai")` → `{proxy}/u/openai`.
 
 ## Query calls
 
@@ -138,6 +152,42 @@ assert.MidStreamError()
 assert.SystemPromptContains("You are")
 ```
 
+## Spec validation
+
+`normalized.validation` is metadata (was the call checked, and how).
+`normalized.spec_violations` is the finding list: `[]` is clean, absent means
+not checked. Do not treat the validation object as a violation. The same empty
+vs absent rule applies to `ignored_fields`.
+
+| Field | Meaning |
+|---|---|
+| `validation` | Metadata: mode, profile, spec SHA, request/response checked, skipped reason |
+| `spec_violations` | Findings. `[]` = clean. Absent = not checked |
+| `ignored_fields` | Vendor keys the proxy ignored (for example `enumDescriptions`) |
+
+```go
+val := call.Validation()
+findings, checked := call.SpecViolations()
+ignored, _ := call.IgnoredFields()
+_ = trace.SpecViolations()
+
+assert.NoSpecViolations() // documented as AssertNoSpecViolations
+assert.NoIgnoredFields()  // documented as AssertNoIgnoredFields
+assert.NoSpecViolations(
+    llmentary.Side("request"),
+    llmentary.Calls(1),
+    llmentary.IgnorePaths("/foo"),
+    llmentary.IgnoreKeywords("unevaluatedProperties"),
+    llmentary.AllowUnvalidated(),
+)
+llmentary.AssertNoSpecViolations(t, trace)
+```
+
+`Summary()` prints `spec=clean`, `spec=N violations`, or `spec=not checked`
+per call. Failures use
+`<call#> <api_family> <side> <path>: <message> — <hint>`, or
+`validation was not run` when the check was off or missing.
+
 ## Response content assertions
 
 ```go
@@ -169,8 +219,8 @@ session 9f...: 2 call(s)
     tool[0] get_weather args={"city":"Paris"}
 ```
 
-The package also keeps the lower-level client methods (`Calls`, `Wait`, `OTLP`, `Delete`)
-for custom assertions.
+The package also keeps the lower-level client methods (`Calls`, `Wait`,
+`ListSessions`, `Config`, `Version`, `OTLP`, `Delete`) for custom assertions.
 
 ## Binary resolution
 

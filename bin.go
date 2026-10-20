@@ -95,7 +95,8 @@ func WithStartControlToken(token string) StartOption {
 	return func(c *startConfig) { c.controlToken = token }
 }
 
-// WithUpstream adds a --upstream name=url mapping. At least one is required.
+// WithUpstream adds a --upstream name=url mapping. Optional: with none,
+// the proxy defaults to openai=https://api.openai.com/v1.
 func WithUpstream(spec string) StartOption {
 	return func(c *startConfig) { c.upstreams = append(c.upstreams, spec) }
 }
@@ -164,9 +165,6 @@ func Start(ctx context.Context, opts ...StartOption) (*Proxy, error) {
 	for _, opt := range opts {
 		opt(&cfg)
 	}
-	if len(cfg.upstreams) == 0 {
-		return nil, errors.New("llmentary: Start requires at least one WithUpstream mapping")
-	}
 	bin := cfg.bin
 	if bin == "" {
 		var err error
@@ -192,17 +190,7 @@ func Start(ctx context.Context, opts ...StartOption) (*Proxy, error) {
 		controlAddr = addr
 	}
 
-	args := []string{
-		"--listen", listenAddr,
-		"--control", controlAddr,
-	}
-	if cfg.controlToken != "" {
-		args = append(args, "--control-token", cfg.controlToken)
-	}
-	for _, spec := range cfg.upstreams {
-		args = append(args, "--upstream", spec)
-	}
-	args = append(args, cfg.extraArgs...)
+	args := proxyArgs(listenAddr, controlAddr, cfg.controlToken, cfg.upstreams, cfg.extraArgs)
 
 	// Do not bind the process to ctx: ctx only covers the health wait.
 	cmd := exec.Command(bin, args...)
@@ -351,6 +339,20 @@ func freeLoopbackAddr() (string, error) {
 	}
 	defer func() { _ = l.Close() }()
 	return l.Addr().String(), nil
+}
+
+func proxyArgs(listenAddr, controlAddr, token string, upstreams, extra []string) []string {
+	args := []string{
+		"--listen", listenAddr,
+		"--control", controlAddr,
+	}
+	if token != "" {
+		args = append(args, "--control-token", token)
+	}
+	for _, spec := range upstreams {
+		args = append(args, "--upstream", spec)
+	}
+	return append(args, extra...)
 }
 
 func hostport(addr string) string {

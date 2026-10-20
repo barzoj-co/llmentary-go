@@ -12,6 +12,23 @@ import (
 	"time"
 )
 
+func TestFailNoCallsNamesSessionAndKnownIDs(t *testing.T) {
+	tb := &fakeTB{}
+	a := &Assertions{t: tb, trace: Trace{SessionID: "sess-zero"}}
+	a.failNoCalls([]string{"alpha", "beta"})
+	joined := strings.Join(tb.messages, "\n")
+	for _, want := range []string{
+		"no calls recorded for session sess-zero",
+		"alpha",
+		"beta",
+		"Trace summary:",
+	} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("missing %q in:\n%s", want, joined)
+		}
+	}
+}
+
 func TestSessionHelpers(t *testing.T) {
 	client := &http.Client{Timeout: time.Second}
 	lm := New(t,
@@ -26,6 +43,9 @@ func TestSessionHelpers(t *testing.T) {
 	}
 	if got := lm.OpenAIBaseURL("openai"); got != "http://127.0.0.1:7777/u/openai" {
 		t.Fatalf("OpenAIBaseURL=%q", got)
+	}
+	if got := lm.OpenAIBaseURL(""); got != "http://127.0.0.1:7777/v1" {
+		t.Fatalf("OpenAIBaseURL(\"\")=%q", got)
 	}
 	if got := lm.BaseURL(""); got != "http://127.0.0.1:7777" {
 		t.Fatalf("BaseURL=%q", got)

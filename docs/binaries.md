@@ -19,7 +19,7 @@ There is no CGO and no post-install hook.
 path, err := llmentary.ResolveBinary()
 proxy, err := llmentary.Start(ctx,
     llmentary.WithBinary(path),
-    llmentary.WithUpstream("openai=https://api.openai.com/v1"),
+    // WithUpstream is optional; the proxy defaults to openai=https://api.openai.com/v1.
 )
 ```
 
@@ -36,7 +36,6 @@ path, err := llmentary.DownloadRelease(ctx, llmentary.DownloadOptions{
 })
 proxy, err := llmentary.Start(ctx,
     llmentary.WithBinary(path),
-    llmentary.WithUpstream("openai=https://api.openai.com/v1"),
 )
 ```
 

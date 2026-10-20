@@ -66,18 +66,77 @@ func (c *Client) NewSession() string {
 func (c *Client) Calls(ctx context.Context, sessionID string) ([]Call, error) {
 	var session sessionPayload
 	if err := c.getJSON(ctx, "/sessions/"+url.PathEscape(sessionID), nil, &session); err != nil {
-		return nil, err
+		return nil, c.wrapSessionError(ctx, sessionID, err)
 	}
 	return session.Calls, nil
 }
 
-func (c *Client) Wait(ctx context.Context, sessionID string, quiet, timeout time.Duration) ([]Call, error) {
+// ListSessions is GET /sessions. Optional Source filters by session_source.
+func (c *Client) ListSessions(ctx context.Context, opts ...ListSessionsOption) ([]SessionInfo, error) {
+	var options listSessionsOptions
+	for _, opt := range opts {
+		if opt != nil {
+			opt(&options)
+		}
+	}
+	var q url.Values
+	if options.Source != "" {
+		q = url.Values{"source": []string{options.Source}}
+	}
+	var payload struct {
+		Sessions []SessionInfo `json:"sessions"`
+	}
+	if err := c.getJSON(ctx, "/sessions", q, &payload); err != nil {
+		return nil, err
+	}
+	if payload.Sessions == nil {
+		return []SessionInfo{}, nil
+	}
+	return payload.Sessions, nil
+}
+
+type listSessionsOptions struct {
+	Source string
+}
+
+// ListSessionsOption configures ListSessions.
+type ListSessionsOption func(*listSessionsOptions)
+
+// Source limits GET /sessions to one session_source
+// (default, header, baggage, or path).
+func Source(source string) ListSessionsOption {
+	return func(o *listSessionsOptions) { o.Source = source }
+}
+
+// Config is GET /config, including the proxy version and effective upstreams.
+func (c *Client) Config(ctx context.Context) (*ProxyConfig, error) {
+	var cfg ProxyConfig
+	if err := c.getJSON(ctx, "/config", nil, &cfg); err != nil {
+		return nil, err
+	}
+	return &cfg, nil
+}
+
+// Version returns GET /config's version field.
+func (c *Client) Version(ctx context.Context) (string, error) {
+	cfg, err := c.Config(ctx)
+	if err != nil {
+		return "", err
+	}
+	if cfg == nil {
+		return "", nil
+	}
+	return cfg.Version, nil
+}
+
+func (c *Client) Wait(ctx context.Context, sessionID string, quiet, timeout time.Duration, opts ...WaitOption) ([]Call, error) {
+	waitOpts := applyWaitOptions(opts)
 	httpTimeout := waitHTTPTimeout(quiet, timeout)
 	waitCtx, cancel := context.WithTimeout(ctx, httpTimeout)
 	defer cancel()
 
 	var session sessionPayload
-	err := c.getJSONQuery(waitCtx, c.waitHTTPClient(httpTimeout), "/sessions/"+url.PathEscape(sessionID)+"/wait", waitQuery(quiet, timeout), &session)
+	err := c.getJSONQuery(waitCtx, c.waitHTTPClient(httpTimeout), "/sessions/"+url.PathEscape(sessionID)+"/wait", waitQuery(quiet, timeout, waitOpts.MinCalls), &session)
 	if err == nil {
 		return session.Calls, nil
 	}
@@ -85,9 +144,22 @@ func (c *Client) Wait(ctx context.Context, sessionID string, quiet, timeout time
 		return nil, ctx.Err()
 	}
 	if !isWaitTimeout(err) {
-		return nil, err
+		return nil, c.wrapSessionError(ctx, sessionID, err)
 	}
 	calls := session.Calls
+	callsSeen := 0
+	minCalls := waitOpts.MinCalls
+	if se := statusErrorOf(err); se != nil {
+		if len(se.session.Calls) > 0 {
+			calls = se.session.Calls
+		}
+		if se.callsSeen > 0 {
+			callsSeen = se.callsSeen
+		}
+		if se.minCalls > 0 {
+			minCalls = se.minCalls
+		}
+	}
 	if len(calls) == 0 {
 		if parsed := parseSessionCalls(err); len(parsed) > 0 {
 			calls = parsed
@@ -97,10 +169,16 @@ func (c *Client) Wait(ctx context.Context, sessionID string, quiet, timeout time
 			recoveryCancel()
 			if fetchErr == nil {
 				calls = fetched
+			} else if IsSessionNotFound(fetchErr) {
+				return nil, fetchErr
 			}
 		}
 	}
-	return nil, waitTimeoutError(sessionID, timeout, calls)
+	if len(calls) == 0 && callsSeen == 0 {
+		known, _ := c.knownSessionIDs(ctx)
+		return nil, newSessionNotFound(sessionID, known, waitTimeoutError(sessionID, timeout, calls, minCalls, callsSeen))
+	}
+	return nil, waitTimeoutError(sessionID, timeout, calls, minCalls, callsSeen)
 }
 
 func (c *Client) OTLP(ctx context.Context, sessionID string) (json.RawMessage, error) {
@@ -130,16 +208,6 @@ func (c *Client) Delete(ctx context.Context, sessionID string) error {
 	return nil
 }
 
-type statusError struct {
-	op     string
-	status int
-	body   string
-}
-
-func (e *statusError) Error() string {
-	return fmt.Sprintf("llmentary %s failed: status=%d body=%s", e.op, e.status, e.body)
-}
-
 func (c *Client) getJSON(ctx context.Context, path string, q url.Values, out any) error {
 	raw := ""
 	if len(q) > 0 {
@@ -166,9 +234,40 @@ func (c *Client) getJSONQuery(ctx context.Context, hc *http.Client, path, rawQue
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return &statusError{op: "get", status: resp.StatusCode, body: string(body)}
+		return parseStatusError("get", resp.StatusCode, string(body))
 	}
 	return json.NewDecoder(resp.Body).Decode(out)
+}
+
+func (c *Client) wrapSessionError(ctx context.Context, sessionID string, err error) error {
+	se := statusErrorOf(err)
+	if se == nil || !se.sessionNotFound() {
+		return err
+	}
+	known, _ := c.knownSessionIDs(ctx)
+	return newSessionNotFound(sessionID, known, err)
+}
+
+func (c *Client) knownSessionIDs(ctx context.Context) ([]string, error) {
+	list, err := c.ListSessions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, 0, len(list))
+	for _, item := range list {
+		if item.ID != "" {
+			ids = append(ids, item.ID)
+		}
+	}
+	return ids, nil
+}
+
+func statusErrorOf(err error) *statusError {
+	var se *statusError
+	if errors.As(err, &se) {
+		return se
+	}
+	return nil
 }
 
 func (c *Client) waitHTTPClient(needed time.Duration) *http.Client {
