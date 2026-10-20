@@ -61,6 +61,21 @@ func TestWeatherTool(t *testing.T) {
 		Messages: []openai.ChatCompletionMessageParamUnion{
 			openai.UserMessage("Weather in Paris?"),
 		},
+		Tools: []openai.ChatCompletionToolParam{{
+			Function: openai.FunctionDefinitionParam{
+				Name: "get_weather",
+				Parameters: openai.FunctionParameters{
+					"type": "object",
+					"properties": map[string]any{
+						"city": map[string]any{"type": "string"},
+					},
+					"required": []string{"city"},
+				},
+			},
+		}},
+		ToolChoice: openai.ChatCompletionToolChoiceOptionParamOfChatCompletionNamedToolChoice(
+			openai.ChatCompletionNamedToolChoiceFunctionParam{Name: "get_weather"},
+		),
 	})
 	if err != nil {
 		t.Fatal(err)

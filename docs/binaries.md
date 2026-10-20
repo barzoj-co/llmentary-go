@@ -15,6 +15,11 @@ and download behavior used by tests and `Start` / `StartForTest`.
 
 There is no CGO and no post-install hook.
 
+```go
+path, err := llmentary.ResolveBinary()
+proxy, err := llmentary.Start(ctx, llmentary.WithUpstream("openai=https://api.openai.com/v1"))
+```
+
 ## DownloadRelease
 
 `DownloadRelease` fetches a pinned GitHub Release of `barzoj-co/llmentary`
@@ -22,8 +27,14 @@ There is no CGO and no post-install hook.
 extracting the `llmentary` binary.
 
 ```go
-path, err := llmentary.ResolveBinary()
-proxy, err := llmentary.Start(ctx, llmentary.WithUpstream("openai=https://api.openai.com/v1"))
+path, err := llmentary.DownloadRelease(ctx, llmentary.DownloadOptions{
+    Version: llmentary.ProxyVersion,
+    DestDir: destDir,
+})
+proxy, err := llmentary.Start(ctx,
+    llmentary.WithBinary(path),
+    llmentary.WithUpstream("openai=https://api.openai.com/v1"),
+)
 ```
 
 Pass `DownloadOptions.Version` as `ProxyVersion` unless you intentionally pin
