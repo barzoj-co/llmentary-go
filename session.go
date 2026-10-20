@@ -47,6 +47,7 @@ type sessionConfig struct {
 	httpClient   *http.Client
 	quiet        time.Duration
 	timeout      time.Duration
+	sessionID    string
 }
 
 // New starts a unique recording session for t and deletes it in t.Cleanup.
@@ -77,10 +78,14 @@ func New(t testing.TB, opts ...Option) *Session {
 	if err != nil {
 		t.Fatalf("llmentary: create client: %v", err)
 	}
+	sessionID := strings.TrimSpace(cfg.sessionID)
+	if sessionID == "" {
+		sessionID = client.NewSession()
+	}
 	lm := &Session{
 		t:          t,
 		client:     client,
-		sessionID:  client.NewSession(),
+		sessionID:  sessionID,
 		proxyURL:   strings.TrimRight(cfg.proxyURL, "/"),
 		quiet:      cfg.quiet,
 		timeout:    cfg.timeout,
@@ -125,6 +130,12 @@ func WithWait(quiet, timeout time.Duration) Option {
 	}
 }
 
+// WithSessionID binds the helper to an existing id instead of minting one.
+// Use it when OPENAI_BASE_URL must be set to PathBaseURL before New(t).
+func WithSessionID(id string) Option {
+	return func(c *sessionConfig) { c.sessionID = id }
+}
+
 func (lm *Session) SessionID() string { return lm.sessionID }
 
 func (lm *Session) Header() (string, string) { return Header(lm.sessionID) }
@@ -152,6 +163,21 @@ func (lm *Session) OpenAIBaseURL(upstream string) string {
 		return lm.proxyURL + "/v1"
 	}
 	return lm.BaseURL(upstream)
+}
+
+// PathBaseURL is the /s/{session}/… listen URL so a service that cannot send
+// headers still lands on this session. Empty upstream is {proxy}/s/{id}/v1;
+// a named upstream is {proxy}/s/{id}/u/{name}.
+func (lm *Session) PathBaseURL(upstream string) string {
+	return pathBaseURL(lm.proxyURL, lm.sessionID, upstream)
+}
+
+func pathBaseURL(proxyURL, sessionID, upstream string) string {
+	base := strings.TrimRight(proxyURL, "/") + "/s/" + url.PathEscape(sessionID)
+	if strings.TrimSpace(upstream) == "" {
+		return base + "/v1"
+	}
+	return base + "/u/" + strings.Trim(upstream, "/")
 }
 
 // ListSessions is GET /sessions for this helper's control client.
@@ -219,22 +245,45 @@ func (lm *Session) Calls(ctx context.Context) Trace {
 
 func (lm *Session) Expect(ctx context.Context, opts ...WaitOption) *Assertions {
 	lm.t.Helper()
-	trace := lm.Wait(ctx, opts...)
-	a := &Assertions{t: lm.t, trace: trace, fatal: true}
-	if len(trace.Calls) == 0 {
-		a.failNoCalls(lm.knownIDs(ctx))
-	}
-	return a
+	return lm.assertions(ctx, true, opts...)
 }
 
 func (lm *Session) Check(ctx context.Context, opts ...WaitOption) *Assertions {
 	lm.t.Helper()
+	return lm.assertions(ctx, false, opts...)
+}
+
+func (lm *Session) assertions(ctx context.Context, fatal bool, opts ...WaitOption) *Assertions {
+	lm.t.Helper()
+	wo := applyWaitOptions(opts)
 	trace := lm.Wait(ctx, opts...)
-	a := &Assertions{t: lm.t, trace: trace}
-	if len(trace.Calls) == 0 {
+	if wo.Since != nil {
+		trace = trace.Query().Since(*wo.Since).Trace()
+	} else if len(trace.Calls) == 0 {
+		a := &Assertions{t: lm.t, trace: trace, fatal: fatal}
 		a.failNoCalls(lm.knownIDs(ctx))
+		return a
 	}
-	return a
+	return &Assertions{t: lm.t, trace: trace, fatal: fatal}
+}
+
+// Mark snapshots the highest recorded seq so later Since(m) can scope a turn.
+func (lm *Session) Mark(ctx context.Context) Mark {
+	lm.t.Helper()
+	calls, err := lm.client.Calls(ctx, lm.sessionID)
+	if err != nil {
+		if IsSessionNotFound(err) {
+			return Mark{Seq: 0}
+		}
+		lm.fatalControl(ctx, "mark", err)
+	}
+	maxSeq := 0
+	for _, call := range calls {
+		if call.Seq > maxSeq {
+			maxSeq = call.Seq
+		}
+	}
+	return Mark{Seq: maxSeq}
 }
 
 func (lm *Session) fatalControl(ctx context.Context, op string, err error) {
@@ -342,6 +391,28 @@ func (q Query) Index(i int) Query {
 		return Query{trace: q.trace}
 	}
 	return Query{trace: q.trace, calls: []Call{q.calls[i]}}
+}
+
+// OffersTool keeps calls that declared tool name in tools_declared.
+func (q Query) OffersTool(name string) Query {
+	return q.keep(func(c Call) bool {
+		for _, tool := range c.Normalized.ToolsDeclared {
+			if tool.Name == name {
+				return true
+			}
+		}
+		return false
+	})
+}
+
+// WithoutTools keeps calls that offered no tools (router / structured-output).
+func (q Query) WithoutTools() Query {
+	return q.keep(func(c Call) bool { return len(c.Normalized.ToolsDeclared) == 0 })
+}
+
+// Since keeps calls with seq greater than mark.Seq.
+func (q Query) Since(m Mark) Query {
+	return q.keep(func(c Call) bool { return c.Seq > m.Seq })
 }
 
 func (q Query) keep(fn func(Call) bool) Query {

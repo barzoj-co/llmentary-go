@@ -47,6 +47,9 @@ func TestSessionHelpers(t *testing.T) {
 	if got := lm.OpenAIBaseURL(""); got != "http://127.0.0.1:7777/v1" {
 		t.Fatalf("OpenAIBaseURL(\"\")=%q", got)
 	}
+	if got := lm.PathBaseURL(""); got != "http://127.0.0.1:7777/s/"+lm.SessionID()+"/v1" {
+		t.Fatalf("PathBaseURL(\"\")=%q", got)
+	}
 	if got := lm.BaseURL(""); got != "http://127.0.0.1:7777" {
 		t.Fatalf("BaseURL=%q", got)
 	}

@@ -47,6 +47,12 @@ func formatWaitDuration(d time.Duration) string {
 // WaitOptions configures /sessions/{id}/wait beyond quiet/timeout.
 type WaitOptions struct {
 	MinCalls int
+	Since    *Mark
+}
+
+// Mark is a seq checkpoint from Session.Mark.
+type Mark struct {
+	Seq int
 }
 
 // WaitOption mutates WaitOptions. Used by Client.Wait, Session.Wait,
@@ -57,6 +63,14 @@ type WaitOption func(*WaitOptions)
 // finished calls and the quiet period. Default 0 (omit the parameter).
 func MinCalls(n int) WaitOption {
 	return func(o *WaitOptions) { o.MinCalls = n }
+}
+
+// Since scopes Expect/Check to calls after mark.Seq. It is not sent to the proxy.
+func Since(m Mark) WaitOption {
+	return func(o *WaitOptions) {
+		cp := m
+		o.Since = &cp
+	}
 }
 
 func applyWaitOptions(opts []WaitOption) WaitOptions {

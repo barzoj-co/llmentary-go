@@ -98,6 +98,22 @@ func TestWeatherTool(t *testing.T) {
 OPENAI_API_KEY=sk-... go test ./...
 ```
 
+Service under test cannot send headers (import-time / env-only clients). Set
+the SDK base URL to `lm.PathBaseURL("")` **before** the app is constructed:
+
+```go
+func TestService(t *testing.T) {
+    lm := llmentary.New(t)
+    t.Setenv("OPENAI_BASE_URL", lm.PathBaseURL("")) // http://127.0.0.1:7777/s/<id>/v1
+    // construct or import the service after this line
+}
+```
+
+Black-box and sidecar recipes:
+[docs/black-box.md](https://github.com/barzoj-co/llmentary/blob/main/docs/black-box.md).
+When to assert on the trace vs the model's wording:
+[docs/assertions-guide.md](https://github.com/barzoj-co/llmentary/blob/main/docs/assertions-guide.md).
+
 The same API is exercised without a live provider in
 [`examples/go/weather_test.go`](examples/go/weather_test.go), which starts the
 proxy from the test with `StartForTest`.

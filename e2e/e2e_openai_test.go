@@ -382,6 +382,193 @@ func TestE2EChatCompletionsNonStreaming(t *testing.T) {
 	assert.NoErrors()
 }
 
+func TestE2EPathSessionAttribution(t *testing.T) {
+	apiKey := requireOpenAIKey(t)
+	model := e2eModel()
+	lm := newSessionDefaultUpstream(t)
+	body := []byte(`{
+		"model":` + strconv.Quote(model) + `,
+		"messages":[{"role":"user","content":"Reply with the single word hi."}],
+		"stream":true,
+		"stream_options":{"include_usage":true},
+		"temperature":0
+	}`)
+	req, err := http.NewRequest(http.MethodPost, lm.PathBaseURL("")+"/chat/completions", bytes.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stream, err := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("path session status=%d", resp.StatusCode)
+	}
+	if !bytes.Contains(stream, []byte("data:")) {
+		t.Fatal("expected chat SSE from path base URL")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	trace := lm.Wait(ctx)
+	if len(trace.Calls) != 1 {
+		t.Fatalf("path session calls=%d\n%s", len(trace.Calls), trace.Summary())
+	}
+	if trace.Calls[0].SessionID != lm.SessionID() {
+		t.Fatalf("session=%q want %q", trace.Calls[0].SessionID, lm.SessionID())
+	}
+	if src := trace.Calls[0].SessionSource; src != "" && src != "path" {
+		t.Fatalf("session_source=%q", src)
+	}
+	if trace.Calls[0].Normalized.Usage == nil {
+		t.Fatalf("path session missing usage:\n%s", trace.Summary())
+	}
+}
+
+func TestE2EUnknownPrefixNotForwarded(t *testing.T) {
+	apiKey := requireOpenAIKey(t)
+	lm := newSession(t)
+	body := []byte(`{"model":` + strconv.Quote(e2eModel()) + `,"messages":[{"role":"user","content":"hi"}]}`)
+	req, err := http.NewRequest(http.MethodPost, lm.BaseURL("")+"/dogfood/v1/chat/completions", bytes.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if resp.StatusCode == http.StatusOK {
+		t.Fatalf("unknown prefix must not reach OpenAI")
+	}
+	_ = payload
+}
+
+func TestE2EMarkSinceAndWithoutTools(t *testing.T) {
+	apiKey := requireOpenAIKey(t)
+	model := e2eModel()
+	lm := newSession(t)
+	router := []byte(`{
+		"model":` + strconv.Quote(model) + `,
+		"messages":[{"role":"user","content":"Reply with JSON {\"ack\":true} and nothing else."}],
+		"stream":false,
+		"temperature":0,
+		"response_format":{"type":"json_object"}
+	}`)
+	_ = postOpenAI(t, apiKey, lm, "/chat/completions", router)
+	first := lm.Wait(context.Background())
+	if len(first.Calls) != 1 {
+		t.Fatalf("turn1 calls=%d\n%s", len(first.Calls), first.Summary())
+	}
+	mark := lm.Mark(context.Background())
+	if mark.Seq != first.Calls[0].Seq {
+		t.Fatalf("mark=%d first=%d", mark.Seq, first.Calls[0].Seq)
+	}
+	if n := first.Query().WithoutTools().Len(); n != 1 {
+		t.Fatalf("without_tools turn1=%d", n)
+	}
+
+	paramsBody := []byte(`{
+		"model":` + strconv.Quote(model) + `,
+		"messages":[{"role":"user","content":"Call the echo_city tool with city Paris."}],
+		"stream":false,
+		"temperature":0,
+		"tool_choice":{"type":"function","function":{"name":"echo_city"}},
+		"tools":[{
+			"type":"function",
+			"function":{
+				"name":"echo_city",
+				"description":"Echo a city name.",
+				"parameters":{"type":"object","properties":{"city":{"type":"string"}},"required":["city"],"additionalProperties":false}
+			}
+		}]
+	}`)
+	_ = postOpenAI(t, apiKey, lm, "/chat/completions", paramsBody)
+	mid := lm.Wait(context.Background())
+	chat := mid.Query().APIType("chat").Since(mark).Calls()
+	if len(chat) == 0 || len(chat[0].Normalized.ToolCalls) == 0 {
+		t.Fatalf("expected tool call after mark:\n%s", mid.Summary())
+	}
+	tool := chat[0].Normalized.ToolCalls[0]
+	finalBody := []byte(`{
+		"model":` + strconv.Quote(model) + `,
+		"messages":[
+			{"role":"user","content":"Call the echo_city tool with city Paris."},
+			{"role":"assistant","tool_calls":[{"id":` + strconv.Quote(tool.ID) + `,"type":"function","function":{"name":"echo_city","arguments":` + strconv.Quote(tool.ArgumentsRaw) + `}}]},
+			{"role":"tool","tool_call_id":` + strconv.Quote(tool.ID) + `,"content":"{\"city\":\"Paris\",\"echoed\":true}"}
+		],
+		"temperature":0
+	}`)
+	_ = postOpenAI(t, apiKey, lm, "/chat/completions", finalBody)
+	assert := lm.Expect(context.Background(), llmentary.Since(mark))
+	assert.CallCount(2)
+	assert.ToolCalled("echo_city")
+	if assert.Trace().Query().WithoutTools().Len() != 0 {
+		t.Fatal("since(mark) should not include the router-style turn")
+	}
+}
+
+func TestE2EToolResultAndMentionsAny(t *testing.T) {
+	for i := 1; i <= 3; i++ {
+		t.Run(fmt.Sprintf("run%d", i), func(t *testing.T) {
+			runE2EToolResultAndMentionsAny(t)
+		})
+	}
+}
+
+func runE2EToolResultAndMentionsAny(t *testing.T) {
+	t.Helper()
+	apiKey := requireOpenAIKey(t)
+	model := e2eModel()
+	lm := newSession(t)
+	toolResult := `{"temperature":20,"condition":"sunny","token":"SEED_X"}`
+	firstBody := []byte(`{
+		"model":` + strconv.Quote(model) + `,
+		"messages":[{"role":"user","content":"Call get_weather for Paris. Do not answer in text."}],
+		"stream":false,
+		"temperature":0,
+		"tool_choice":{"type":"function","function":{"name":"get_weather"}},
+		"tools":[{
+			"type":"function",
+			"function":{
+				"name":"get_weather",
+				"description":"Look up weather.",
+				"parameters":{"type":"object","properties":{"city":{"type":"string"}},"required":["city"],"additionalProperties":false}
+			}
+		}]
+	}`)
+	_ = postOpenAI(t, apiKey, lm, "/chat/completions", firstBody)
+	first := lm.Wait(context.Background())
+	calls := first.Query().APIType("chat").Calls()
+	if len(calls) == 0 || len(calls[0].Normalized.ToolCalls) == 0 {
+		t.Fatalf("expected weather tool call:\n%s", first.Summary())
+	}
+	tool := calls[0].Normalized.ToolCalls[0]
+	finalBody := []byte(`{
+		"model":` + strconv.Quote(model) + `,
+		"messages":[
+			{"role":"user","content":"Call get_weather for Paris then say the temperature and whether it is sunny."},
+			{"role":"assistant","tool_calls":[{"id":` + strconv.Quote(tool.ID) + `,"type":"function","function":{"name":"get_weather","arguments":` + strconv.Quote(tool.ArgumentsRaw) + `}}]},
+			{"role":"tool","tool_call_id":` + strconv.Quote(tool.ID) + `,"content":` + strconv.Quote(toolResult) + `}
+		],
+		"temperature":0
+	}`)
+	_ = postOpenAI(t, apiKey, lm, "/chat/completions", finalBody)
+	assert := lm.Expect(context.Background())
+	assert.ToolResultInPrompt("get_weather")
+	assert.PromptContains("SEED_X")
+	assert.FinalResponseMentionsAny("20", "sunny")
+}
+
 func requireOpenAIKey(t *testing.T) string {
 	t.Helper()
 	apiKey := os.Getenv("OPENAI_API_KEY")
