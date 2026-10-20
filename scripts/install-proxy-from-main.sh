@@ -21,10 +21,8 @@ TMP="$(mktemp -d)"
 cleanup() { rm -rf "${TMP}"; }
 trap cleanup EXIT
 
-# extraHeader keeps the token out of the clone URL.
-git -c http.extraHeader="AUTHORIZATION: bearer ${TOKEN}" \
-  clone --depth 1 --branch main \
-  "https://github.com/barzoj-co/llmentary.git" "${TMP}/src"
+# gh uses GH_TOKEN; keep the clone URL token-free.
+GH_TOKEN="${TOKEN}" gh repo clone barzoj-co/llmentary "${TMP}/src" -- --depth 1 --branch main
 
 echo "proxy main $(git -C "${TMP}/src" rev-parse --short HEAD)"
 (cd "${TMP}/src" && go build -o "${DEST}/llmentary" ./cmd/llmentary)

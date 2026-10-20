@@ -120,12 +120,12 @@ func TestListSessionsAndConfig(t *testing.T) {
 
 func TestCallsSessionNotFound(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.URL.Path == "/sessions/missing":
+		switch r.URL.Path {
+		case "/sessions/missing":
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusNotFound)
 			_, _ = w.Write([]byte(`{"error":{"type":"session_not_found","message":"no calls recorded for session \"missing\"; known sessions: GET /sessions"}}`))
-		case r.URL.Path == "/sessions":
+		case "/sessions":
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"sessions": []SessionInfo{{ID: "known-a"}, {ID: "known-b"}},
 			})
