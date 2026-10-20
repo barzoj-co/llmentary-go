@@ -17,7 +17,10 @@ There is no CGO and no post-install hook.
 
 ```go
 path, err := llmentary.ResolveBinary()
-proxy, err := llmentary.Start(ctx, llmentary.WithUpstream("openai=https://api.openai.com/v1"))
+proxy, err := llmentary.Start(ctx,
+    llmentary.WithBinary(path),
+    llmentary.WithUpstream("openai=https://api.openai.com/v1"),
+)
 ```
 
 ## DownloadRelease
@@ -29,7 +32,7 @@ extracting the `llmentary` binary.
 ```go
 path, err := llmentary.DownloadRelease(ctx, llmentary.DownloadOptions{
     Version: llmentary.ProxyVersion,
-    DestDir: destDir,
+    DestDir: ".llmentary",
 })
 proxy, err := llmentary.Start(ctx,
     llmentary.WithBinary(path),
