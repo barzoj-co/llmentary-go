@@ -185,6 +185,7 @@ func TestE2EWaitMinCalls(t *testing.T) {
 			"model":` + strconv.Quote(model) + `,
 			"messages":[{"role":"user","content":"Reply with the single word hi."}],
 			"stream":true,
+			"stream_options":{"include_usage":true},
 			"temperature":0
 		}`)
 		stream, err := doOpenAI(apiKey, lm, "/chat/completions", chatBody)
@@ -195,12 +196,12 @@ func TestE2EWaitMinCalls(t *testing.T) {
 		respBody := []byte(`{
 			"model":` + strconv.Quote(model) + `,
 			"input":"Reply with the single word hi.",
-			"stream":true,
+			"stream":false,
 			"temperature":0
 		}`)
 		stream, err = doOpenAI(apiKey, lm, "/responses", respBody)
-		if err != nil || !bytes.Contains(stream, []byte("event:")) {
-			errc <- fmt.Errorf("responses stream: %w", err)
+		if err != nil || !bytes.Contains(stream, []byte(`"usage"`)) {
+			errc <- fmt.Errorf("responses: %w", err)
 			return
 		}
 		errc <- nil
@@ -216,6 +217,9 @@ func TestE2EWaitMinCalls(t *testing.T) {
 		t.Fatalf("min_calls=2 returned %d calls:\n%s", len(trace.Calls), trace.Summary())
 	}
 	for _, call := range trace.Calls {
+		if call.HTTPStatus != http.StatusOK {
+			t.Fatalf("call #%d status=%d:\n%s", call.Seq, call.HTTPStatus, trace.Summary())
+		}
 		if call.Normalized.Usage == nil {
 			t.Fatalf("call #%d missing usage:\n%s", call.Seq, trace.Summary())
 		}
@@ -230,6 +234,7 @@ func TestE2EDefaultUpstream(t *testing.T) {
 		"model":` + strconv.Quote(model) + `,
 		"messages":[{"role":"user","content":"Reply with the single word hi."}],
 		"stream":true,
+		"stream_options":{"include_usage":true},
 		"temperature":0
 	}`)
 	req, err := http.NewRequest(http.MethodPost, lm.OpenAIBaseURL("")+"/chat/completions", bytes.NewReader(body))
@@ -273,7 +278,12 @@ func TestE2EDefaultUpstream(t *testing.T) {
 func TestE2EUnknownNestedFieldSpecViolation(t *testing.T) {
 	apiKey := requireOpenAIKey(t)
 	model := e2eModel()
-	lm := newSession(t)
+	// LTL-API-2 L2: unknown nested message field, 200 upstream.
+	// Relaxed leaves message objects open; strict flags the extra field.
+	lm := newSessionOnProxy(t, true,
+		[]llmentary.StartOption{llmentary.WithExtraArgs("--spec-profile=strict")},
+		llmentary.WithWait(200*time.Millisecond, 30*time.Second),
+	)
 	body := []byte(`{
 		"model":` + strconv.Quote(model) + `,
 		"messages":[{"role":"user","content":"Reply with the single word hi.","llmentary_probe":true}],
@@ -418,15 +428,15 @@ func newSessionDefaults(t *testing.T) *llmentary.Session {
 
 func newSessionWithWait(t *testing.T, opts ...llmentary.Option) *llmentary.Session {
 	t.Helper()
-	return newSessionOnProxy(t, true, opts...)
+	return newSessionOnProxy(t, true, nil, opts...)
 }
 
 func newSessionDefaultUpstream(t *testing.T) *llmentary.Session {
 	t.Helper()
-	return newSessionOnProxy(t, false, llmentary.WithWait(200*time.Millisecond, 30*time.Second))
+	return newSessionOnProxy(t, false, nil, llmentary.WithWait(200*time.Millisecond, 30*time.Second))
 }
 
-func newSessionOnProxy(t *testing.T, namedUpstream bool, opts ...llmentary.Option) *llmentary.Session {
+func newSessionOnProxy(t *testing.T, namedUpstream bool, extra []llmentary.StartOption, opts ...llmentary.Option) *llmentary.Session {
 	t.Helper()
 	if _, err := llmentary.ResolveBinary(); err != nil {
 		t.Fatalf("llmentary proxy binary is required for e2e: %v", err)
@@ -435,6 +445,7 @@ func newSessionOnProxy(t *testing.T, namedUpstream bool, opts ...llmentary.Optio
 	if namedUpstream {
 		startOpts = append(startOpts, llmentary.WithUpstream("openai=https://api.openai.com/v1"))
 	}
+	startOpts = append(startOpts, extra...)
 	proxy := llmentary.StartForTest(t, startOpts...)
 	sessionOpts := []llmentary.Option{
 		llmentary.WithProxyURL(proxy.ProxyURL),
