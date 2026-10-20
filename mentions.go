@@ -24,7 +24,7 @@ func mentionsAny(text string, candidates []string, normalizeNumbers, caseFold bo
 		if needle == "" {
 			continue
 		}
-		if strings.Contains(hay, needle) || strings.Contains(hay, trimDegreeUnit(needle)) || strings.Contains(trimDegreeUnit(hay), needle) {
+		if mentionTokensContain(hay, needle) || mentionTokensContain(hay, trimDegreeUnit(needle)) || mentionTokensContain(trimDegreeUnit(hay), needle) {
 			return true
 		}
 	}
@@ -33,12 +33,92 @@ func mentionsAny(text string, candidates []string, normalizeNumbers, caseFold bo
 
 func trimDegreeUnit(s string) string {
 	s = strings.TrimSpace(s)
-	for _, suffix := range []string{" c", " f", "c", "f"} {
-		if strings.HasSuffix(s, suffix) {
-			return strings.TrimSpace(strings.TrimSuffix(s, suffix))
+	for _, suffix := range []string{" c", " f"} {
+		if !strings.HasSuffix(s, suffix) {
+			continue
+		}
+		stem := strings.TrimSpace(strings.TrimSuffix(s, suffix))
+		tokens := mentionTokens(stem)
+		if len(tokens) == 0 {
+			continue
+		}
+		last := tokens[len(tokens)-1]
+		if last == "degrees" || isNumericToken(last) {
+			return stem
 		}
 	}
 	return s
+}
+
+func mentionTokens(s string) []string {
+	var tokens []string
+	var b strings.Builder
+	flush := func() {
+		if b.Len() == 0 {
+			return
+		}
+		tokens = append(tokens, b.String())
+		b.Reset()
+	}
+	runes := []rune(s)
+	for i, r := range runes {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			b.WriteRune(r)
+			continue
+		}
+		if r == '.' && b.Len() > 0 && i+1 < len(runes) && unicode.IsDigit(runes[i+1]) {
+			last := rune(0)
+			for _, tr := range b.String() {
+				last = tr
+			}
+			if unicode.IsDigit(last) {
+				b.WriteRune(r)
+				continue
+			}
+		}
+		flush()
+	}
+	flush()
+	return tokens
+}
+
+func mentionTokensContain(hay, needle string) bool {
+	ht := mentionTokens(hay)
+	nt := mentionTokens(needle)
+	if len(nt) == 0 || len(nt) > len(ht) {
+		return false
+	}
+	for i := 0; i+len(nt) <= len(ht); i++ {
+		match := true
+		for j := range nt {
+			if ht[i+j] != nt[j] {
+				match = false
+				break
+			}
+		}
+		if match {
+			return true
+		}
+	}
+	return false
+}
+
+func isNumericToken(s string) bool {
+	if s == "" {
+		return false
+	}
+	sawDigit := false
+	for i, r := range s {
+		if unicode.IsDigit(r) {
+			sawDigit = true
+			continue
+		}
+		if r == '.' && i > 0 && i < len(s)-1 {
+			continue
+		}
+		return false
+	}
+	return sawDigit
 }
 
 func normalizeMention(s string, normalizeNumbers, caseFold bool) string {
@@ -101,9 +181,8 @@ func promptFromRawRequest(raw []byte) string {
 		return string(raw)
 	}
 	var parts []string
-	if sys, ok := body["system"].(string); ok && sys != "" {
-		parts = append(parts, sys)
-	}
+	appendContent(&parts, body["system"])
+	appendContent(&parts, body["instructions"])
 	appendContent(&parts, body["messages"])
 	appendContent(&parts, body["input"])
 	return strings.Join(parts, "\n")
@@ -204,37 +283,42 @@ func toolResultContent(raw []byte, callID, name string) string {
 }
 
 func findToolResult(value any, callID, name string) string {
-	items, ok := value.([]any)
-	if !ok {
-		return ""
-	}
-	for _, item := range items {
-		msg, ok := item.(map[string]any)
-		if !ok {
-			continue
+	switch typed := value.(type) {
+	case []any:
+		for _, item := range typed {
+			if got := findToolResult(item, callID, name); got != "" {
+				return got
+			}
 		}
-		role, _ := msg["role"].(string)
-		typ, _ := msg["type"].(string)
+	case map[string]any:
+		if nested, ok := typed["content"].([]any); ok {
+			if got := findToolResult(nested, callID, name); got != "" {
+				return got
+			}
+		}
+		role, _ := typed["role"].(string)
+		typ, _ := typed["type"].(string)
 		isResult := role == "tool" || typ == "function_call_output" || typ == "tool_result"
 		if !isResult {
-			continue
+			return ""
 		}
-		id, _ := msg["tool_call_id"].(string)
+		id, _ := typed["tool_call_id"].(string)
 		if id == "" {
-			id, _ = msg["call_id"].(string)
+			id, _ = typed["call_id"].(string)
 		}
-		toolName, _ := msg["name"].(string)
+		if id == "" {
+			id, _ = typed["tool_use_id"].(string)
+		}
+		toolName, _ := typed["name"].(string)
 		idMatch := callID != "" && id == callID
 		nameMatch := name != "" && toolName == name
 		if !idMatch && !nameMatch {
-			continue
+			return ""
 		}
-		if content, ok := msg["content"].(string); ok && content != "" {
-			return content
-		}
-		if output, ok := msg["output"].(string); ok && output != "" {
-			return output
-		}
+		var parts []string
+		appendContent(&parts, typed["content"])
+		appendContent(&parts, typed["output"])
+		return strings.Join(parts, "\n")
 	}
 	return ""
 }

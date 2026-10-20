@@ -477,20 +477,21 @@ func TestE2EMarkSinceAndWithoutTools(t *testing.T) {
 		t.Fatalf("without_tools turn1=%d", n)
 	}
 
-	paramsBody := []byte(`{
-		"model":` + strconv.Quote(model) + `,
-		"messages":[{"role":"user","content":"Call the echo_city tool with city Paris."}],
-		"stream":false,
-		"temperature":0,
-		"tool_choice":{"type":"function","function":{"name":"echo_city"}},
-		"tools":[{
+	echoCityTools := `[{
 			"type":"function",
 			"function":{
 				"name":"echo_city",
 				"description":"Echo a city name.",
 				"parameters":{"type":"object","properties":{"city":{"type":"string"}},"required":["city"],"additionalProperties":false}
 			}
-		}]
+		}]`
+	paramsBody := []byte(`{
+		"model":` + strconv.Quote(model) + `,
+		"messages":[{"role":"user","content":"Call the echo_city tool with city Paris."}],
+		"stream":false,
+		"temperature":0,
+		"tool_choice":{"type":"function","function":{"name":"echo_city"}},
+		"tools":` + echoCityTools + `
 	}`)
 	_ = postOpenAI(t, apiKey, lm, "/chat/completions", paramsBody)
 	mid := lm.Wait(context.Background())
@@ -506,12 +507,18 @@ func TestE2EMarkSinceAndWithoutTools(t *testing.T) {
 			{"role":"assistant","tool_calls":[{"id":` + strconv.Quote(tool.ID) + `,"type":"function","function":{"name":"echo_city","arguments":` + strconv.Quote(tool.ArgumentsRaw) + `}}]},
 			{"role":"tool","tool_call_id":` + strconv.Quote(tool.ID) + `,"content":"{\"city\":\"Paris\",\"echoed\":true}"}
 		],
-		"temperature":0
+		"temperature":0,
+		"tools":` + echoCityTools + `
 	}`)
 	_ = postOpenAI(t, apiKey, lm, "/chat/completions", finalBody)
 	assert := lm.Expect(context.Background(), llmentary.Since(mark))
 	assert.CallCount(2)
 	assert.ToolCalled("echo_city")
+	for _, call := range assert.Trace().Calls {
+		if call.Seq <= mark.Seq {
+			t.Fatalf("since(mark) included seq=%d mark=%d", call.Seq, mark.Seq)
+		}
+	}
 	if assert.Trace().Query().WithoutTools().Len() != 0 {
 		t.Fatal("since(mark) should not include the router-style turn")
 	}

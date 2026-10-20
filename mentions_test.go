@@ -21,6 +21,10 @@ func TestMentionsAnyTable(t *testing.T) {
 		{"degrees word", "about 20 degrees today", []string{"20°C"}, true},
 		{"casefold", "Moderate cardiovascular risk", []string{"moderate"}, true},
 		{"no match", "the sky is blue", []string{"20", "sunny"}, false},
+		{"number inside larger", "It is 120 °C", []string{"20"}, false},
+		{"year 2020", "in 2020", []string{"20"}, false},
+		{"about vs abc", "about", []string{"abc"}, false},
+		{"abc vs about", "abc", []string{"about"}, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -83,13 +87,37 @@ func TestFinalResponseMentionsAnyAndToolResultInPrompt(t *testing.T) {
 	tb := &fakeTB{}
 	fail := &Assertions{t: tb, trace: mutated}
 	fail.ToolResultInPrompt("get_weather")
+	if !tb.failed || len(tb.messages) != 1 {
+		t.Fatalf("ToolResultInPrompt should fail independently: messages=%q", tb.messages)
+	}
 	fail.FinalResponseMentionsAny("20", "sunny")
-	if !tb.failed {
-		t.Fatal("mutated golden should fail both helpers")
+	if len(tb.messages) != 2 {
+		t.Fatalf("FinalResponseMentionsAny should fail independently: messages=%q", tb.messages)
 	}
 	joined := strings.Join(tb.messages, "\n")
 	if !strings.Contains(joined, "get_weather") || !strings.Contains(joined, "20") {
 		t.Fatalf("messages=%q", joined)
+	}
+}
+
+func TestPromptTextSystemAndInstructions(t *testing.T) {
+	call := Call{RawRequest: []byte(`{
+		"system":[{"type":"text","text":"SYS_BLOCK"}],
+		"instructions":"INSTR_TEXT",
+		"messages":[{"role":"user","content":"hi"}]
+	}`)}
+	got := call.PromptText()
+	for _, want := range []string{"SYS_BLOCK", "INSTR_TEXT", "hi"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("PromptText missing %q: %q", want, got)
+		}
+	}
+}
+
+func TestFindToolResultNestedToolUseID(t *testing.T) {
+	raw := []byte(`{"messages":[{"role":"user","content":[{"type":"tool_result","tool_use_id":"use_1","content":"NESTED_RESULT"}]}]}`)
+	if got := toolResultContent(raw, "use_1", "weather"); got != "NESTED_RESULT" {
+		t.Fatalf("got %q", got)
 	}
 }
 
