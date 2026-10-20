@@ -101,7 +101,6 @@ jobs:
 
       - name: Install pinned proxy release
         env:
-          LLMTESTLAB_REPO_TOKEN: ${{ secrets.LLMTESTLAB_REPO_TOKEN }}
           GH_TOKEN: ${{ secrets.LLMTESTLAB_REPO_TOKEN }}
           LLMENTARY_LIVE_DOWNLOAD: "1"
           LLMENTARY_LIVE_DOWNLOAD_DIR: ${{ github.workspace }}/bin
@@ -168,7 +167,6 @@ jobs:
 
       - name: Install pinned proxy release
         env:
-          LLMTESTLAB_REPO_TOKEN: ${{ secrets.LLMTESTLAB_REPO_TOKEN }}
           GH_TOKEN: ${{ secrets.LLMTESTLAB_REPO_TOKEN }}
           LLMENTARY_LIVE_DOWNLOAD: "1"
           LLMENTARY_LIVE_DOWNLOAD_DIR: ${{ github.workspace }}/bin
