@@ -1,0 +1,26 @@
+{
+  "id": "call_1",
+  "session_id": "chatservice-run1",
+  "seq": 1,
+  "provider": "openrouter",
+  "api_family": "openai.chat",
+  "http_status": 200,
+  "normalized": {
+    "derived_version": 1,
+    "model": {"requested": "openai/gpt-4.1-mini", "returned": "openai/gpt-4.1-mini"},
+    "finish_reason": "stop",
+    "output_text": "hello",
+    "validation": {
+      "mode": "warn",
+      "profile": "relaxed",
+      "spec_sha": "f88d2f78deadbeef",
+      "schema_subset_retrieved": "2026-10-18",
+      "request_checked": true,
+      "response_checked": true,
+      "skipped_reason": null,
+      "duration_us": 400
+    },
+    "spec_violations": [],
+    "ignored_fields": []
+  }
+}

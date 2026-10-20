@@ -7,12 +7,15 @@ Workflows live under `.github/workflows/`. The main pipeline is `ci.yml`:
 - `integration`: non-fork pull requests and pushes to `main`; downloads the
   pinned `ProxyVersion` GitHub Release of `barzoj-co/llmentary` with
   `llmentary.DownloadRelease` (checksum-verified; token
-  `secrets.LLMTESTLAB_REPO_TOKEN` for private assets), runs the mock-upstream
-  example, uploads `coverage-integration.out` tokenless
+  `secrets.LLMTESTLAB_REPO_TOKEN` for private assets), then builds the proxy
+  from `barzoj-co/llmentary` `main` over that binary so tests exercise current
+  control-API endpoints (list sessions, `min_calls`, default upstream, spec
+  accessors). Runs the mock-upstream example, uploads
+  `coverage-integration.out` tokenless
 - `e2e`: same event filter as `integration`; uses the `openai-e2e` environment
   so each live run waits for maintainer approval; installs the same pinned
-  proxy release, downloads and compiles the e2e module without secrets, then
-  runs the live OpenAI suite
+  release then overwrites it with a `main` build, downloads and compiles the
+  e2e module without secrets, then runs the live OpenAI suite
 - `e2e-gate`: always runs; green only when `e2e` succeeded. This is the check
   to require, not `e2e` itself (a skipped required check is treated as passing).
   A rejected or timed-out environment approval makes `e2e-gate` red.

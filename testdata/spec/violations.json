@@ -1,0 +1,38 @@
+{
+  "id": "call_1",
+  "session_id": "violations",
+  "seq": 1,
+  "provider": "openai",
+  "api_family": "openai.chat",
+  "http_status": 200,
+  "normalized": {
+    "derived_version": 1,
+    "model": {"requested": "gpt-test"},
+    "finish_reason": "stop",
+    "validation": {
+      "mode": "warn",
+      "profile": "relaxed",
+      "spec_sha": "abc",
+      "request_checked": true,
+      "response_checked": true
+    },
+    "spec_violations": [
+      {
+        "side": "request",
+        "source": "schema",
+        "path": "foo",
+        "pointer": "/foo",
+        "keyword": "unevaluatedProperties",
+        "message": "additional properties not allowed"
+      },
+      {
+        "side": "response",
+        "source": "schema",
+        "path": "choices.0.extra",
+        "pointer": "/choices/0/extra",
+        "keyword": "unevaluatedProperties",
+        "message": "additional properties not allowed"
+      }
+    ]
+  }
+}

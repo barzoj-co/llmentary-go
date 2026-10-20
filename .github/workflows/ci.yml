@@ -107,6 +107,7 @@ jobs:
         run: |
           mkdir -p "$GITHUB_WORKSPACE/bin"
           go test -run TestDownloadPinnedProxyRelease -count=1 -v
+          bash scripts/install-proxy-from-main.sh "$GITHUB_WORKSPACE/bin"
           echo "$GITHUB_WORKSPACE/bin" >> "$GITHUB_PATH"
 
       - name: Integration tests (proxy + mock upstream)
@@ -173,6 +174,7 @@ jobs:
         run: |
           mkdir -p "$GITHUB_WORKSPACE/bin"
           go test -run TestDownloadPinnedProxyRelease -count=1 -v
+          bash scripts/install-proxy-from-main.sh "$GITHUB_WORKSPACE/bin"
           echo "$GITHUB_WORKSPACE/bin" >> "$GITHUB_PATH"
 
       - name: Download e2e modules

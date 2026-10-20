@@ -27,14 +27,14 @@ Put it on your `PATH` as `llmentary`, or set `LLMENTARY_BIN`. Lookup details:
 
 ## Quickstart
 
-Run the proxy against OpenAI, then point `openai-go` at the named upstream.
-`llmentary.New(t)` tags requests with `X-Test-Session`:
+Run the proxy (no `--upstream` needed: it defaults to
+`openai=https://api.openai.com/v1`). `llmentary.New(t)` tags requests with
+`X-Test-Session`:
 
 ```bash
 llmentary \
   --listen 127.0.0.1:7777 \
-  --control 127.0.0.1:7778 \
-  --upstream openai=https://api.openai.com/v1
+  --control 127.0.0.1:7778
 ```
 
 ```go
@@ -55,7 +55,7 @@ func TestWeatherTool(t *testing.T) {
 
     client := openai.NewClient(
         option.WithAPIKey(os.Getenv("OPENAI_API_KEY")),
-        option.WithBaseURL(lm.OpenAIBaseURL("openai")), // http://127.0.0.1:7777/u/openai
+        option.WithBaseURL(lm.OpenAIBaseURL("")), // http://127.0.0.1:7777/v1
         option.WithHTTPClient(lm.HTTPClient()),         // injects X-Test-Session
         option.WithMaxRetries(0),
     )
@@ -123,9 +123,10 @@ assertion API.
 
 ## Waiting for calls
 
-The proxy `/sessions/{id}/wait` endpoint reads `timeout` and `quiet` as Go
-duration strings. All clients send exactly those two query parameters, for
-example `timeout=30s&quiet=500ms`.
+The proxy `/sessions/{id}/wait` endpoint reads `timeout`, `quiet`, and
+optional `min_calls` as query parameters, for example
+`timeout=30s&quiet=500ms&min_calls=2`. Pass `llmentary.MinCalls(n)` to
+`Wait` / `Expect` / `Check`.
 
 | Setting | Default | Environment variable |
 |---|---|---|

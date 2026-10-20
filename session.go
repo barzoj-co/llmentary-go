@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -147,7 +148,30 @@ func (lm *Session) BaseURL(upstream string) string {
 }
 
 func (lm *Session) OpenAIBaseURL(upstream string) string {
+	if strings.TrimSpace(upstream) == "" {
+		return lm.proxyURL + "/v1"
+	}
 	return lm.BaseURL(upstream)
+}
+
+// ListSessions is GET /sessions for this helper's control client.
+func (lm *Session) ListSessions(ctx context.Context, opts ...ListSessionsOption) []SessionInfo {
+	lm.t.Helper()
+	list, err := lm.client.ListSessions(ctx, opts...)
+	if err != nil {
+		lm.t.Fatalf("llmentary: list sessions: %v", err)
+	}
+	return list
+}
+
+// Version is the proxy version from GET /config.
+func (lm *Session) Version(ctx context.Context) string {
+	lm.t.Helper()
+	version, err := lm.client.Version(ctx)
+	if err != nil {
+		lm.t.Fatalf("llmentary: proxy version: %v", err)
+	}
+	return version
 }
 
 func (lm *Session) HTTPClient() *http.Client {
@@ -175,11 +199,11 @@ func (t sessionTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	return t.base.RoundTrip(clone)
 }
 
-func (lm *Session) Wait(ctx context.Context) Trace {
+func (lm *Session) Wait(ctx context.Context, opts ...WaitOption) Trace {
 	lm.t.Helper()
-	calls, err := lm.client.Wait(ctx, lm.sessionID, lm.quiet, lm.timeout)
+	calls, err := lm.client.Wait(ctx, lm.sessionID, lm.quiet, lm.timeout, opts...)
 	if err != nil {
-		lm.t.Fatalf("llmentary: wait for session %s: %v", lm.sessionID, err)
+		lm.fatalControl(ctx, "wait", err)
 	}
 	return Trace{SessionID: lm.sessionID, Calls: calls}
 }
@@ -188,21 +212,51 @@ func (lm *Session) Calls(ctx context.Context) Trace {
 	lm.t.Helper()
 	calls, err := lm.client.Calls(ctx, lm.sessionID)
 	if err != nil {
-		lm.t.Fatalf("llmentary: fetch session %s: %v", lm.sessionID, err)
+		lm.fatalControl(ctx, "fetch", err)
 	}
 	return Trace{SessionID: lm.sessionID, Calls: calls}
 }
 
-func (lm *Session) Expect(ctx context.Context) *Assertions {
+func (lm *Session) Expect(ctx context.Context, opts ...WaitOption) *Assertions {
 	lm.t.Helper()
-	trace := lm.Wait(ctx)
-	return &Assertions{t: lm.t, trace: trace, fatal: true}
+	trace := lm.Wait(ctx, opts...)
+	a := &Assertions{t: lm.t, trace: trace, fatal: true}
+	if len(trace.Calls) == 0 {
+		a.failNoCalls(lm.knownIDs(ctx))
+	}
+	return a
 }
 
-func (lm *Session) Check(ctx context.Context) *Assertions {
+func (lm *Session) Check(ctx context.Context, opts ...WaitOption) *Assertions {
 	lm.t.Helper()
-	trace := lm.Wait(ctx)
-	return &Assertions{t: lm.t, trace: trace}
+	trace := lm.Wait(ctx, opts...)
+	a := &Assertions{t: lm.t, trace: trace}
+	if len(trace.Calls) == 0 {
+		a.failNoCalls(lm.knownIDs(ctx))
+	}
+	return a
+}
+
+func (lm *Session) fatalControl(ctx context.Context, op string, err error) {
+	lm.t.Helper()
+	if IsSessionNotFound(err) {
+		lm.t.Fatalf("llmentary: %s session %s: %v\n\nTrace summary:\n%s", op, lm.sessionID, err, Trace{SessionID: lm.sessionID}.Summary())
+	}
+	var timeout *WaitTimeoutError
+	if errors.As(err, &timeout) && len(timeout.Calls) == 0 && timeout.CallsSeen == 0 {
+		known := lm.knownIDs(ctx)
+		snf := newSessionNotFound(lm.sessionID, known, err)
+		lm.t.Fatalf("llmentary: %s session %s: %v\n\nTrace summary:\n%s", op, lm.sessionID, snf, Trace{SessionID: lm.sessionID}.Summary())
+	}
+	lm.t.Fatalf("llmentary: %s session %s: %v", op, lm.sessionID, err)
+}
+
+func (lm *Session) knownIDs(ctx context.Context) []string {
+	ids, err := lm.client.knownSessionIDs(ctx)
+	if err != nil {
+		return nil
+	}
+	return ids
 }
 
 type Trace struct {
@@ -224,6 +278,7 @@ func (tr Trace) Summary() string {
 		} else {
 			fmt.Fprintf(&b, "%d", *call.RetryCount)
 		}
+		fmt.Fprintf(&b, " spec=%s", call.specSummary())
 		b.WriteByte('\n')
 		for _, tool := range call.Normalized.ToolCalls {
 			fmt.Fprintf(&b, "    tool[%d] %s args=%s\n", tool.Index, tool.Name, compactJSON(tool.ArgumentsRaw))
@@ -319,6 +374,11 @@ func (a *Assertions) fail(format string, args ...any) bool {
 	}
 	a.t.Error(msg)
 	return false
+}
+
+func (a *Assertions) failNoCalls(known []string) bool {
+	a.t.Helper()
+	return a.fail("%s", newSessionNotFound(a.trace.SessionID, known, nil).Error())
 }
 
 func (a *Assertions) CallCount(want int, opts ...CallCountOption) bool {

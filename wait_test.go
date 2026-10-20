@@ -51,6 +51,15 @@ func TestWaitQueryStringDefaultAndConfigured(t *testing.T) {
 		}
 	})
 
+	t.Run("min_calls", func(t *testing.T) {
+		gotQuery = ""
+		lm := New(t, WithControlURL(srv.URL), WithProxyURL(srv.URL), WithWait(200*time.Millisecond, 5*time.Second))
+		_ = lm.Wait(context.Background(), MinCalls(2))
+		if gotQuery != "timeout=5s&quiet=200ms&min_calls=2" {
+			t.Fatalf("min_calls wait query = %q", gotQuery)
+		}
+	})
+
 	t.Run("env", func(t *testing.T) {
 		gotQuery = ""
 		t.Setenv(EnvWaitTimeout, "90")
@@ -136,6 +145,40 @@ func TestApplyWaitEnvInvalidNamesVariable(t *testing.T) {
 	}
 }
 
+func TestWaitTimeoutZeroCallsIsSessionNotFound(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/sessions/empty/wait":
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusGatewayTimeout)
+			_, _ = w.Write([]byte(`{"error":{"type":"wait_timeout","calls_seen":0,"min_calls":1}}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/sessions/empty":
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"error":{"type":"session_not_found","message":"no calls recorded for session \"empty\""}}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/sessions":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"sessions": []SessionInfo{{ID: "already-there"}},
+			})
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	c, err := NewClient(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = c.Wait(context.Background(), "empty", DefaultWaitQuiet, time.Second, MinCalls(1))
+	if !IsSessionNotFound(err) {
+		t.Fatalf("err=%v", err)
+	}
+	if !strings.Contains(err.Error(), "no calls recorded for session empty") || !strings.Contains(err.Error(), "already-there") {
+		t.Fatalf("error %q should name the session and known ids", err)
+	}
+}
+
 func TestWaitTimeoutErrorMessage(t *testing.T) {
 	ended := time.Now()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -185,7 +228,10 @@ func TestFormatWaitDurationKeepsSeconds(t *testing.T) {
 	if got := formatWaitDuration(200 * time.Millisecond); got != "200ms" {
 		t.Fatalf("200ms formatted as %q", got)
 	}
-	if got := waitQuery(DefaultWaitQuiet, DefaultWaitTimeout); got != "timeout=30s&quiet=500ms" {
+	if got := waitQuery(DefaultWaitQuiet, DefaultWaitTimeout, 0); got != "timeout=30s&quiet=500ms" {
 		t.Fatalf("default query = %q", got)
+	}
+	if got := waitQuery(DefaultWaitQuiet, DefaultWaitTimeout, 2); got != "timeout=30s&quiet=500ms&min_calls=2" {
+		t.Fatalf("min_calls query = %q", got)
 	}
 }

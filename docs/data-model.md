@@ -144,7 +144,16 @@ from an Azure-style `/deployments/{deployment}/...` path segment.
   "stream_truncated": false,
   "client_aborted": false,
   "parser_warnings": [],
-  "raw": null
+  "raw": null,
+  "validation": {
+    "mode": "warn",
+    "profile": "relaxed",
+    "spec_sha": "f88d2f78…",
+    "request_checked": true,
+    "response_checked": true
+  },
+  "spec_violations": [],
+  "ignored_fields": []
 }
 ```
 
@@ -174,6 +183,17 @@ from an Azure-style `/deployments/{deployment}/...` path segment.
 | `client_aborted` | Copying the upstream response to the client returned an error. |
 | `parser_warnings` | Non-fatal parser warnings. |
 | `raw` | Reserved raw normalized payload field; currently not populated by parsers. |
+| `validation` | Spec-check metadata (mode, profile, whether request/response were checked). Not a finding list. |
+| `spec_violations` | Findings. `[]` is clean. Absent means validation was not run. |
+| `ignored_fields` | Vendor keywords the proxy ignored. Same empty-vs-absent rule as `spec_violations`. |
+
+Validation vs findings:
+
+| Field | What it is |
+|---|---|
+| `validation` | Metadata: was it checked, and how |
+| `spec_violations` | Findings. `[]` = clean. Absent = not checked |
+| `ignored_fields` | Ignored vendor fields. `[]` = none. Absent = not recorded |
 
 ## Tools
 
