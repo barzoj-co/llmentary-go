@@ -142,6 +142,36 @@ func TestFindToolResultNestedToolUseID(t *testing.T) {
 	}
 }
 
+func TestFindToolResultRejectsMismatchedID(t *testing.T) {
+	raw := []byte(`{"messages":[{"role":"tool","tool_call_id":"call_other","name":"echo_city","content":"WRONG"}]}`)
+	if got := toolResultContent(raw, "call_a", "echo_city"); got != "" {
+		t.Fatalf("mismatched id should not match by name: %q", got)
+	}
+	nameless := []byte(`{"messages":[{"role":"tool","name":"echo_city","content":"NAME_ONLY"}]}`)
+	if got := toolResultContent(nameless, "call_a", "echo_city"); got != "NAME_ONLY" {
+		t.Fatalf("empty result id should fall back to name: %q", got)
+	}
+}
+
+func TestToolResultInPromptRejectsMismatchedID(t *testing.T) {
+	trace := Trace{SessionID: "s", Calls: []Call{
+		{
+			Seq:        1,
+			Normalized: Normalized{ToolCalls: []ToolCall{{ID: "call_a", Name: "echo_city"}}},
+		},
+		{
+			Seq:        2,
+			RawRequest: []byte(`{"messages":[{"role":"tool","tool_call_id":"call_other","name":"echo_city","content":"WRONG"}]}`),
+		},
+	}}
+	tb := &fakeTB{}
+	fail := &Assertions{t: tb, trace: trace}
+	fail.ToolResultInPrompt("echo_city")
+	if !tb.failed {
+		t.Fatal("same-name result with a different id must not pass")
+	}
+}
+
 func TestSoftModeReportsAllFailures(t *testing.T) {
 	tb := &fakeTB{}
 	a := &Assertions{t: tb, trace: Trace{SessionID: "s", Calls: []Call{{

@@ -302,9 +302,11 @@ func findToolResult(value any, callID, name string) string {
 			id, _ = typed["tool_use_id"].(string)
 		}
 		toolName, _ := typed["name"].(string)
-		idMatch := callID != "" && id == callID
-		nameMatch := name != "" && toolName == name
-		if !idMatch && !nameMatch {
+		if callID != "" && id != "" {
+			if id != callID {
+				return ""
+			}
+		} else if name == "" || toolName != name {
 			return ""
 		}
 		var parts []string
