@@ -14,7 +14,9 @@ const (
 	DefaultSessionID  = "default"
 )
 
-type Session struct {
+// sessionPayload is the control-API JSON envelope for one recorded session.
+// The test-facing handle is Session (see New).
+type sessionPayload struct {
 	ID    string `json:"id"`
 	Calls []Call `json:"calls"`
 }

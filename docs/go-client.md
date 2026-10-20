@@ -14,6 +14,8 @@ Related references:
 
 ## Session per test
 
+`New(t)` returns `*Session`. Use `lm` as the local variable:
+
 ```go
 func TestAgent(t *testing.T) {
     lm := llmentary.New(t,

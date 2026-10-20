@@ -63,7 +63,7 @@ func (c *Client) NewSession() string {
 }
 
 func (c *Client) Calls(ctx context.Context, sessionID string) ([]Call, error) {
-	var session Session
+	var session sessionPayload
 	if err := c.getJSON(ctx, "/sessions/"+url.PathEscape(sessionID), nil, &session); err != nil {
 		return nil, err
 	}
@@ -78,7 +78,7 @@ func (c *Client) Wait(ctx context.Context, sessionID string, quiet, timeout time
 	if timeout > 0 {
 		q.Set("timeout", timeout.String())
 	}
-	var session Session
+	var session sessionPayload
 	if err := c.getJSON(ctx, "/sessions/"+url.PathEscape(sessionID)+"/wait", q, &session); err != nil {
 		return nil, err
 	}

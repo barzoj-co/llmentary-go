@@ -22,11 +22,11 @@ const (
 	defaultControlURL = "http://127.0.0.1:7778"
 )
 
-// LM is a per-test llmentary helper bound to testing.TB.
+// Session is a per-test llmentary helper bound to testing.TB.
 // Create one with New:
 //
 //	lm := llmentary.New(t)
-type LM struct {
+type Session struct {
 	t          testing.TB
 	client     *Client
 	sessionID  string
@@ -36,10 +36,10 @@ type LM struct {
 	httpClient *http.Client
 }
 
-// LMOption configures New.
-type LMOption func(*lmConfig)
+// Option configures New.
+type Option func(*sessionConfig)
 
-type lmConfig struct {
+type sessionConfig struct {
 	controlURL   string
 	proxyURL     string
 	controlToken string
@@ -49,9 +49,9 @@ type lmConfig struct {
 }
 
 // New starts a unique recording session for t and deletes it in t.Cleanup.
-func New(t testing.TB, opts ...LMOption) *LM {
+func New(t testing.TB, opts ...Option) *Session {
 	t.Helper()
-	cfg := lmConfig{
+	cfg := sessionConfig{
 		controlURL: getenvDefault("LLMENTARY_CONTROL_URL", defaultControlURL),
 		proxyURL:   getenvDefault("LLMENTARY_PROXY_URL", defaultProxyURL),
 		quiet:      500 * time.Millisecond,
@@ -71,7 +71,7 @@ func New(t testing.TB, opts ...LMOption) *LM {
 	if err != nil {
 		t.Fatalf("llmentary: create client: %v", err)
 	}
-	lm := &LM{
+	lm := &Session{
 		t:          t,
 		client:     client,
 		sessionID:  client.NewSession(),
@@ -89,60 +89,62 @@ func New(t testing.TB, opts ...LMOption) *LM {
 }
 
 // WithControlURL sets the proxy control API URL (default LLMENTARY_CONTROL_URL or http://127.0.0.1:7778).
-func WithControlURL(rawURL string) LMOption {
-	return func(c *lmConfig) { c.controlURL = rawURL }
+func WithControlURL(rawURL string) Option {
+	return func(c *sessionConfig) { c.controlURL = rawURL }
 }
 
 // WithProxyURL sets the proxy listen URL (default LLMENTARY_PROXY_URL or http://127.0.0.1:7777).
-func WithProxyURL(rawURL string) LMOption {
-	return func(c *lmConfig) { c.proxyURL = rawURL }
+func WithProxyURL(rawURL string) Option {
+	return func(c *sessionConfig) { c.proxyURL = rawURL }
 }
 
-// WithLMControlToken sets the control API bearer token for this helper.
-func WithLMControlToken(token string) LMOption {
-	return func(c *lmConfig) { c.controlToken = token }
+// WithSessionControlToken sets the control API bearer token for this helper.
+// Named distinctly from Client's WithControlToken.
+func WithSessionControlToken(token string) Option {
+	return func(c *sessionConfig) { c.controlToken = token }
 }
 
-// WithLMHTTPClient sets the HTTP client used for control API calls and as the base for HTTPClient.
-func WithLMHTTPClient(client *http.Client) LMOption {
-	return func(c *lmConfig) { c.httpClient = client }
+// WithSessionHTTPClient sets the HTTP client used for control API calls and as the base for HTTPClient.
+// Named distinctly from Client's WithHTTPClient.
+func WithSessionHTTPClient(client *http.Client) Option {
+	return func(c *sessionConfig) { c.httpClient = client }
 }
 
 // WithWait sets the quiet period and timeout used by Wait, Expect, and Check.
-func WithWait(quiet, timeout time.Duration) LMOption {
-	return func(c *lmConfig) {
+func WithWait(quiet, timeout time.Duration) Option {
+	return func(c *sessionConfig) {
 		c.quiet = quiet
 		c.timeout = timeout
 	}
 }
 
-func (lm *LM) SessionID() string { return lm.sessionID }
+func (lm *Session) SessionID() string { return lm.sessionID }
 
-func (lm *LM) Header() (string, string) { return Header(lm.sessionID) }
+func (lm *Session) Header() (string, string) { return Header(lm.sessionID) }
 
-func (lm *LM) Headers() http.Header {
+func (lm *Session) Headers() http.Header {
 	h := http.Header{}
 	key, value := lm.Header()
 	h.Set(key, value)
 	return h
 }
 
-func (lm *LM) Baggage() string {
+func (lm *Session) Baggage() string {
 	return "llmentary.session.id=" + url.QueryEscape(lm.sessionID)
 }
 
-func (lm *LM) BaseURL(upstream string) string {
+func (lm *Session) BaseURL(upstream string) string {
 	if upstream == "" {
 		return lm.proxyURL
 	}
 	return lm.proxyURL + "/u/" + strings.Trim(upstream, "/")
 }
 
-func (lm *LM) OpenAIBaseURL(upstream string) string {
+func (lm *Session) OpenAIBaseURL(upstream string) string {
 	return lm.BaseURL(upstream)
 }
 
-func (lm *LM) HTTPClient() *http.Client {
+func (lm *Session) HTTPClient() *http.Client {
 	client := http.Client{}
 	if lm.httpClient != nil {
 		client = *lm.httpClient
@@ -167,7 +169,7 @@ func (t sessionTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	return t.base.RoundTrip(clone)
 }
 
-func (lm *LM) Wait(ctx context.Context) Trace {
+func (lm *Session) Wait(ctx context.Context) Trace {
 	lm.t.Helper()
 	calls, err := lm.client.Wait(ctx, lm.sessionID, lm.quiet, lm.timeout)
 	if err != nil {
@@ -176,7 +178,7 @@ func (lm *LM) Wait(ctx context.Context) Trace {
 	return Trace{SessionID: lm.sessionID, Calls: calls}
 }
 
-func (lm *LM) Calls(ctx context.Context) Trace {
+func (lm *Session) Calls(ctx context.Context) Trace {
 	lm.t.Helper()
 	calls, err := lm.client.Calls(ctx, lm.sessionID)
 	if err != nil {
@@ -185,13 +187,13 @@ func (lm *LM) Calls(ctx context.Context) Trace {
 	return Trace{SessionID: lm.sessionID, Calls: calls}
 }
 
-func (lm *LM) Expect(ctx context.Context) *Assertions {
+func (lm *Session) Expect(ctx context.Context) *Assertions {
 	lm.t.Helper()
 	trace := lm.Wait(ctx)
 	return &Assertions{t: lm.t, trace: trace, fatal: true}
 }
 
-func (lm *LM) Check(ctx context.Context) *Assertions {
+func (lm *Session) Check(ctx context.Context) *Assertions {
 	lm.t.Helper()
 	trace := lm.Wait(ctx)
 	return &Assertions{t: lm.t, trace: trace}

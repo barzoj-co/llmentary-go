@@ -1,8 +1,9 @@
 # Recorded trace data model
 
-The control API returns one `Session` per test id. A session contains ordered `Call`
-records. The Go structs live in [`types.go`](../types.go); this document describes their
-JSON shape and normalization rules.
+The control API returns one session per test id. A session contains ordered `Call`
+records. The Go structs for those records live in [`types.go`](../types.go); this
+document describes their JSON shape and normalization rules. The test-facing handle
+is `llmentary.Session` (`lm := llmentary.New(t)`).
 
 ## Session
 

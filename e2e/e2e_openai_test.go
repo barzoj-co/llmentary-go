@@ -24,7 +24,7 @@ import (
 func TestE2EChatCompletionsToolFlow(t *testing.T) {
 	apiKey := requireOpenAIKey(t)
 	model := e2eModel()
-	lm := newLM(t)
+	lm := newSession(t)
 	client := openai.NewClient(
 		option.WithAPIKey(apiKey),
 		option.WithBaseURL(lm.OpenAIBaseURL("openai")),
@@ -81,7 +81,7 @@ func TestE2EChatCompletionsToolFlow(t *testing.T) {
 func TestE2EResponsesToolFlow(t *testing.T) {
 	apiKey := requireOpenAIKey(t)
 	model := e2eModel()
-	lm := newLM(t)
+	lm := newSession(t)
 
 	firstBody := []byte(`{
 		"model":` + strconv.Quote(model) + `,
@@ -152,7 +152,7 @@ func TestE2EResponsesToolFlow(t *testing.T) {
 func TestE2EChatCompletionsNonStreaming(t *testing.T) {
 	apiKey := requireOpenAIKey(t)
 	model := e2eModel()
-	lm := newLM(t)
+	lm := newSession(t)
 	body := []byte(`{
 		"model":` + strconv.Quote(model) + `,
 		"messages":[{"role":"user","content":"Call the echo_city tool with city Paris. Do not answer in text."}],
@@ -209,7 +209,7 @@ func requireOpenAIKey(t *testing.T) string {
 	return apiKey
 }
 
-func postOpenAI(t *testing.T, apiKey string, lm *llmentary.LM, path string, body []byte) []byte {
+func postOpenAI(t *testing.T, apiKey string, lm *llmentary.Session, path string, body []byte) []byte {
 	t.Helper()
 	req, err := http.NewRequest(http.MethodPost, lm.OpenAIBaseURL("openai")+path, bytes.NewReader(body))
 	if err != nil {
@@ -234,7 +234,7 @@ func postOpenAI(t *testing.T, apiKey string, lm *llmentary.LM, path string, body
 	return stream
 }
 
-func newLM(t *testing.T) *llmentary.LM {
+func newSession(t *testing.T) *llmentary.Session {
 	t.Helper()
 	if _, err := llmentary.ResolveBinary(); err != nil {
 		t.Fatalf("llmentary proxy binary is required for e2e: %v", err)

@@ -12,13 +12,13 @@ import (
 	"time"
 )
 
-func TestLMSessionHelpers(t *testing.T) {
+func TestSessionHelpers(t *testing.T) {
 	client := &http.Client{Timeout: time.Second}
 	lm := New(t,
 		WithProxyURL("http://127.0.0.1:7777"),
 		WithControlURL("http://127.0.0.1:7778"),
-		WithLMControlToken("token"),
-		WithLMHTTPClient(client),
+		WithSessionControlToken("token"),
+		WithSessionHTTPClient(client),
 		WithWait(time.Millisecond, time.Second),
 	)
 	if lm.SessionID() == "" {
