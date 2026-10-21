@@ -640,7 +640,10 @@ func TestE2EWaitNeverCreatedSession(t *testing.T) {
 	t.Run("min_calls_0_session_not_found", func(t *testing.T) {
 		_, err := client.Wait(ctx, ghost, 50*time.Millisecond, 2*time.Second)
 		if !llmentary.IsSessionNotFound(err) {
-			t.Skipf("proxy wait min_calls=0 on a never-created session returned %v; 404 session_not_found needs the unreleased proxy DOG-17 change", err)
+			t.Fatalf("wait min_calls=0 on a never-created session want SessionNotFound, got %v", err)
+		}
+		if !strings.Contains(err.Error(), ghost) {
+			t.Fatalf("session-not-found %q should name %s", err, ghost)
 		}
 	})
 
