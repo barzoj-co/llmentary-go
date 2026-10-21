@@ -299,8 +299,8 @@ assert.NoSpecViolations(
 llmentary.AssertNoSpecViolations(t, trace)
 ```
 
-`Summary()` prints `spec=clean`, `spec=N violations`, or `spec=not checked`
-per call. Failures use
+`Summary()` prints `spec=<token>` per call, using the tokens listed above.
+Failures use
 `<call#> <api_family> <side> <path>: <message> — <hint>`, or
 `validation was not run` when the check was off or missing.
 
