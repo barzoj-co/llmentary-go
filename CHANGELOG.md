@@ -1,5 +1,12 @@
 # Changelog
 
+## [Unreleased]
+
+### Bug Fixes
+
+* fail IsolatedFrom on an unknown or empty other session unless AllowEmpty (DOG-32)
+* introduce every new later-call user message in IsolatedFrom (DOG-33)
+
 ## [0.4.0](https://github.com/barzoj-co/llmentary-go/compare/v0.3.0...v0.4.0) (2026-10-21)
 
 

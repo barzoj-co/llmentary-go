@@ -80,8 +80,10 @@ lm.Expect(ctx, llmentary.AllowEmpty()).IsolatedFrom(other.SessionID())
 
 `ExpectNoCalls` treats `404 session_not_found` as success and fails a
 session that recorded calls with `expected 0 LLM calls, got N` plus the
-trace summary. `IsolatedFrom(<never-created>)` is that same
-`no calls recorded for session <id>` assertion, not `SessionNotFound`.
+trace summary. `IsolatedFrom(<never-created or empty other>)` fails with
+`no calls recorded for session <id> (isolated_from needs calls on both
+sides)` unless `AllowEmpty` is set. That is an assertion, not
+`SessionNotFound`.
 
 `wait` on a session that was never created (or was `DELETE`d) depends on
 `min_calls`:
@@ -229,16 +231,20 @@ lm.Expect(ctx).IsolatedFrom(other.SessionID(), llmentary.MinChars(8), llmentary.
 1. every call's `session_id` is this session;
 2. no call id appears in both sessions;
 3. no **foreign** user turn: a user-role message in this request that this
-   session never introduced (the last user message of each call, excluding
-   inbound history already seen) but the other session did. Comparison is
-   exact after trim, whitespace collapse, and Unicode casefold — never
-   substring. Equal texts both sessions sent themselves are not a leak.
-   Texts shorter than `min_chars` (default 8) are ignored.
+   session never introduced but the other session did. The first call
+   introduces only its last user-role message (inbound history is seen,
+   not introduced). Later calls introduce **each** user-role message
+   whose normalized form was not already present in an earlier call of
+   the same session. Comparison is exact after trim, whitespace collapse,
+   and Unicode casefold — never substring. Equal texts both sessions sent
+   themselves are not a leak. Texts shorter than `min_chars` (default 8)
+   are ignored.
 
 System/developer prompts and tool definitions are never compared. An empty
-session fails unless `AllowEmpty`. The same canned question in two parallel
-sessions therefore passes; replaying the other session's user turn as
-history fails and names both `#seq (id)` values.
+session on this side, or a never-created / empty other session, fails unless
+`AllowEmpty`. The same canned question in two parallel sessions therefore
+passes; replaying the other session's user turn as history fails and names
+the request `#seq (id)` plus `also introduced by session …`.
 
 ## Tool assertions
 

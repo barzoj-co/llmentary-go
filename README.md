@@ -148,9 +148,11 @@ Prove two path-prefix sessions stayed apart with
 `lm.Expect(ctx).IsolatedFrom(other.SessionID())`. Matching follows the
 [isolation spec](https://github.com/barzoj-co/llmentary/blob/main/docs/isolation-spec.md):
 `session_id` ownership, no shared call ids, and no **foreign** user turn
-(exact normalized match of a user message this session never sent). The
-same canned prompt in two sessions passes; history replay of the other
-session's turn fails. System prompts and tool names are not compared.
+(exact normalized match of a user message this session never introduced).
+The first call introduces only its last user message; later calls
+introduce each new user-role message. The same canned prompt in two
+sessions passes; history replay of the other session's turn fails.
+System prompts and tool names are not compared.
 
 See [docs/go-client.md](docs/go-client.md) for the full session, query, and
 assertion API.
@@ -166,10 +168,11 @@ lm.Expect(ctx, llmentary.AllowEmpty()).CallCount(0)   // empty Expectation
 lm.Expect(ctx, llmentary.AllowEmpty()).IsolatedFrom(other.SessionID())
 ```
 
-`IsolatedFrom` on a never-created other session is the assertion
-`no calls recorded for session <id>` (not `SessionNotFound`); with
-`AllowEmpty` it passes. Client messages contain `known sessions:` at most
-once.
+`IsolatedFrom` on a never-created or empty other session fails with
+`no calls recorded for session <id> (isolated_from needs calls on both
+sides)` (not `SessionNotFound`); with `AllowEmpty` it passes. Do not use
+`IsolatedFrom` against an unused session without that opt-in. Client
+messages contain `known sessions:` at most once.
 
 ### Testing interruptions / barge-in
 

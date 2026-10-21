@@ -71,7 +71,8 @@ func TestIsolatedFromNeverCreatedSession(t *testing.T) {
 	}
 	rec.flush()
 	joined := strings.Join(rec.messages, "\n")
-	if !strings.Contains(joined, "no calls recorded for session ghost") {
+	if !strings.Contains(joined, "no calls recorded for session ghost") ||
+		!strings.Contains(joined, "isolated_from needs calls on both sides") {
 		t.Fatalf("want assertion, not raw SessionNotFound:\n%s", joined)
 	}
 	if strings.Contains(joined, "llmentary: wait") && strings.Contains(joined, "SessionNotFound") {
@@ -82,6 +83,18 @@ func TestIsolatedFromNeverCreatedSession(t *testing.T) {
 	a.t = ok
 	if !a.Check(context.Background(), AllowEmpty()).IsolatedFrom("ghost") {
 		t.Fatalf("AllowEmpty IsolatedFrom(never-created) should pass: %v", ok.messages)
+	}
+
+	typo := &fakeTB{}
+	a.t = typo
+	if a.Check(context.Background()).IsolatedFrom("a-typo") {
+		t.Fatal("IsolatedFrom(typo id) should fail")
+	}
+	typo.flush()
+	typoMsg := strings.Join(typo.messages, "\n")
+	if !strings.Contains(typoMsg, "no calls recorded for session a-typo") ||
+		!strings.Contains(typoMsg, "isolated_from needs calls on both sides") {
+		t.Fatalf("typo IsolatedFrom:\n%s", typoMsg)
 	}
 }
 

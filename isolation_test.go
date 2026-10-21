@@ -167,10 +167,8 @@ func TestIsolatedFromFixtures(t *testing.T) {
 		joined := strings.Join(tb.messages, "\n")
 		for _, want := range []string{
 			"user text 'What is my biological age?'",
-			"#1 (call_a)",
-			"#1 (call_b)",
-			"a",
-			"b",
+			"also introduced by session a #1 (call_a)",
+			"appears in session b #1 (call_b)",
 		} {
 			if !strings.Contains(joined, want) {
 				t.Fatalf("missing %q in:\n%s", want, joined)
@@ -230,7 +228,8 @@ func TestIsolatedFromFixtures(t *testing.T) {
 			t.Fatal("empty other session should fail")
 		}
 		joined := strings.Join(tb.messages, "\n")
-		if !strings.Contains(joined, "no calls recorded for session ghost") {
+		if !strings.Contains(joined, "no calls recorded for session ghost") ||
+			!strings.Contains(joined, "isolated_from needs calls on both sides") {
 			t.Fatalf("empty other message: %v", tb.messages)
 		}
 		if strings.Contains(joined, "SessionNotFound") {
@@ -294,6 +293,53 @@ func TestIsolatedFromFixtures(t *testing.T) {
 		}
 	})
 
+	t.Run("typo_other_id_fails", func(t *testing.T) {
+		tb := &fakeTB{}
+		if bargeTrace.Query().Check(tb).IsolatedFrom("barge-typo", WithOtherTrace(Trace{SessionID: "barge-typo"})) {
+			t.Fatal("mistyped other session should fail")
+		}
+		joined := strings.Join(tb.messages, "\n")
+		if !strings.Contains(joined, "no calls recorded for session barge-typo") ||
+			!strings.Contains(joined, "isolated_from needs calls on both sides") {
+			t.Fatalf("typo other message: %v", tb.messages)
+		}
+	})
+
+	t.Run("later_call_introduces_all_new_user_messages", func(t *testing.T) {
+		first := isolationCall("p", "call_p1", 1, "", `{"messages":[{"role":"user","content":"Opening question number one"}]}`)
+		second := isolationCall("p", "call_p2", 2, "", `{
+			"messages":[
+				{"role":"user","content":"Opening question number one"},
+				{"role":"user","content":"Second message sent by P itself"},
+				{"role":"user","content":"Third message sent by P itself"}
+			]
+		}`)
+		q := isolationCall("q", "call_q1", 1, "", `{"messages":[{"role":"user","content":"Second message sent by P itself"}]}`)
+		tb := &fakeTB{}
+		a := Trace{SessionID: "p", Calls: []Call{first, second}}.Query().Check(tb)
+		if !a.IsolatedFrom("q", WithOtherTrace(Trace{SessionID: "q", Calls: []Call{q}})) {
+			t.Fatalf("later-call new user messages are introduced: %v", tb.messages)
+		}
+	})
+
+	t.Run("overlap_in_non_first_later_message", func(t *testing.T) {
+		first := isolationCall("x", "call_x1", 1, "", `{"messages":[{"role":"user","content":"First turn from X itself"}]}`)
+		second := isolationCall("x", "call_x2", 2, "", `{
+			"messages":[
+				{"role":"user","content":"First turn from X itself"},
+				{"role":"assistant","content":"Noted."},
+				{"role":"user","content":"Second turn from X itself"},
+				{"role":"user","content":"Third turn from X itself"}
+			]
+		}`)
+		y := isolationCall("y", "call_y1", 1, "", `{"messages":[{"role":"user","content":"Second turn from X itself"}]}`)
+		tb := &fakeTB{}
+		a := Trace{SessionID: "x", Calls: []Call{first, second}}.Query().Check(tb)
+		if !a.IsolatedFrom("y", WithOtherTrace(Trace{SessionID: "y", Calls: []Call{y}})) {
+			t.Fatalf("non-last later-call text is introduced by X: %v", tb.messages)
+		}
+	})
+
 	t.Run("ignore_texts", func(t *testing.T) {
 		origin := isolationCall("a", "call_a", 1, "", `{"messages":[{"role":"user","content":"What is my biological age?"}]}`)
 		replay := isolationCall("b", "call_b", 1, "", `{
@@ -309,6 +355,35 @@ func TestIsolatedFromFixtures(t *testing.T) {
 			t.Fatalf("IgnoreTexts should drop the replayed turn: %v", tb.messages)
 		}
 	})
+}
+
+func TestIntroducedUserTurns(t *testing.T) {
+	first := isolationCall("p", "call_1", 1, "", `{
+		"messages":[
+			{"role":"user","content":"History from elsewhere"},
+			{"role":"user","content":"Opening question number one"}
+		]
+	}`)
+	later := isolationCall("p", "call_2", 2, "", `{
+		"messages":[
+			{"role":"user","content":"Opening question number one"},
+			{"role":"user","content":"Second message sent by P itself"},
+			{"role":"user","content":"Third message sent by P itself"}
+		]
+	}`)
+	got := introducedUserTurns("p", []Call{later, first}, 8, nil)
+	if _, ok := got[normalizeIsolationText("History from elsewhere")]; ok {
+		t.Fatal("first-call inbound history must not be introduced")
+	}
+	if _, ok := got[normalizeIsolationText("Opening question number one")]; !ok {
+		t.Fatal("first-call last user message must be introduced")
+	}
+	if _, ok := got[normalizeIsolationText("Second message sent by P itself")]; !ok {
+		t.Fatal("later-call non-last new user message must be introduced")
+	}
+	if _, ok := got[normalizeIsolationText("Third message sent by P itself")]; !ok {
+		t.Fatal("later-call last new user message must be introduced")
+	}
 }
 
 func TestIsolationVectors(t *testing.T) {

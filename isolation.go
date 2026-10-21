@@ -69,10 +69,12 @@ func IgnoreTexts(texts ...string) IsolatedFromOption {
 //  1. every call's session_id is this session (and the other trace matches);
 //  2. no call id appears in both sessions;
 //  3. no foreign user turn: a user-role message in this request that this
-//     session never introduced (last user turn of each call, excluding
-//     inbound history already seen) but the other session did. Comparison
-//     is exact after trim, whitespace collapse, and Unicode casefold —
-//     never substring.
+//     session never introduced but the other session did. The first call
+//     introduces only its last user-role message (inbound history is
+//     seen, not introduced). Later calls introduce each user-role
+//     message whose normalized form was not already present in an
+//     earlier call of the same session. Comparison is exact after trim,
+//     whitespace collapse, and Unicode casefold — never substring.
 //
 // Empty this session, or a never-created / empty other session, fails
 // unless AllowEmpty. System/developer prompts and tool definitions are
@@ -127,7 +129,7 @@ func (a *Assertions) IsolatedFrom(otherSessionID string, opts ...IsolatedFromOpt
 		}
 	}
 	if !a.allowEmpty && len(other.Calls) == 0 {
-		return a.fail("no calls recorded for session %s", otherSessionID)
+		return a.fail("no calls recorded for session %s (isolated_from needs calls on both sides)", otherSessionID)
 	}
 	ignore := isolationIgnoreSet(cfg.ignore)
 	minChars := cfg.minCharsOrDefault()
@@ -155,8 +157,8 @@ func (a *Assertions) IsolatedFrom(otherSessionID string, opts ...IsolatedFromOpt
 			if !foreign {
 				continue
 			}
-			return a.fail("user text '%s' from session %s #%d (%s) appears in session %s #%d (%s)",
-				text, hit.session, hit.seq, hit.callID, thisID, call.Seq, call.ID)
+			return a.fail("user text '%s' from session %s #%d (%s) appears in session %s #%d (%s); also introduced by session %s #%d (%s)",
+				text, hit.session, hit.seq, hit.callID, thisID, call.Seq, call.ID, hit.session, hit.seq, hit.callID)
 		}
 	}
 	return true
@@ -228,34 +230,44 @@ type isolationTurn struct {
 func introducedUserTurns(sessionID string, calls []Call, minChars int, ignore map[string]struct{}) map[string]isolationTurn {
 	ordered := append([]Call(nil), calls...)
 	sort.SliceStable(ordered, func(i, j int) bool { return ordered[i].Seq < ordered[j].Seq })
-	seenHistory := map[string]struct{}{}
+	seenEarlier := map[string]struct{}{}
 	out := map[string]isolationTurn{}
+	var firstSeq *int
 	for _, call := range ordered {
+		if firstSeq == nil {
+			seq := call.Seq
+			firstSeq = &seq
+		}
 		texts := call.UserTexts()
 		if len(texts) == 0 {
-			continue
-		}
-		for _, text := range texts[:len(texts)-1] {
-			if key := normalizeIsolationText(text); key != "" {
-				seenHistory[key] = struct{}{}
-			}
-		}
-		text := texts[len(texts)-1]
-		key := normalizeIsolationText(text)
-		if !keepIsolationText(key, minChars, ignore) {
-			continue
-		}
-		if _, history := seenHistory[key]; history {
-			continue
-		}
-		if _, exists := out[key]; exists {
 			continue
 		}
 		sid := sessionID
 		if call.SessionID != "" {
 			sid = call.SessionID
 		}
-		out[key] = isolationTurn{session: sid, callID: call.ID, seq: call.Seq, text: text}
+		candidates := texts
+		if call.Seq == *firstSeq {
+			candidates = texts[len(texts)-1:]
+		}
+		for _, text := range candidates {
+			key := normalizeIsolationText(text)
+			if !keepIsolationText(key, minChars, ignore) {
+				continue
+			}
+			if _, seen := seenEarlier[key]; seen {
+				continue
+			}
+			if _, exists := out[key]; exists {
+				continue
+			}
+			out[key] = isolationTurn{session: sid, callID: call.ID, seq: call.Seq, text: text}
+		}
+		for _, text := range texts {
+			if key := normalizeIsolationText(text); key != "" {
+				seenEarlier[key] = struct{}{}
+			}
+		}
 	}
 	return out
 }
