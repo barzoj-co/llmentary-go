@@ -287,6 +287,8 @@ func keepIsolationText(key string, minChars int, ignore map[string]struct{}) boo
 	return true
 }
 
+// normalizeIsolationText trims, collapses whitespace, then Unicode-casefolds
+// with cases.Fold (ß→ss, Greek Σ/ς, and the rest of the Unicode fold).
 func normalizeIsolationText(s string) string {
 	s = strings.Join(strings.Fields(strings.TrimSpace(s)), " ")
 	return cases.Fold().String(s)
