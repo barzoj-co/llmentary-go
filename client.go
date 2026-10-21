@@ -169,14 +169,10 @@ func (c *Client) Wait(ctx context.Context, sessionID string, quiet, timeout time
 			recoveryCancel()
 			if fetchErr == nil {
 				calls = fetched
-			} else if IsSessionNotFound(fetchErr) {
-				return nil, fetchErr
 			}
+			// A 504 wait_timeout stays a timeout even when GET is 404:
+			// min_calls>=1 waits for a session that may still appear.
 		}
-	}
-	if len(calls) == 0 && callsSeen == 0 {
-		known, _ := c.knownSessionIDs(ctx)
-		return nil, newSessionNotFound(sessionID, known, waitTimeoutError(sessionID, timeout, calls, minCalls, callsSeen))
 	}
 	return nil, waitTimeoutError(sessionID, timeout, calls, minCalls, callsSeen)
 }

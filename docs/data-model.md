@@ -61,10 +61,10 @@ is `llmentary.Session` (`lm := llmentary.New(t)`).
 
 | Field | Type | Meaning |
 |---|---|---|
-| `id` | string | Proxy-generated id, currently `call_` plus base-36 counter. |
+| `id` | string | Unique within one proxy process, shared counter across sessions. Do not use it for order; use `seq`. Currently `call_` plus a base-36 counter. |
 | `session_id` | string | Session bucket. |
 | `session_source` | string | `header`, `baggage`, `path`, or `default`. Go: `Call.SessionSource`. |
-| `seq` | number | 1-based order within the session. |
+| `seq` | number | 1-based order within the session. Call ids are process-global; `seq` is per session. |
 | `started_at` | timestamp | UTC time before the upstream request starts. |
 | `first_byte_at` | timestamp, optional | UTC time when the first upstream response byte is copied to the client. |
 | `ended_at` | timestamp | UTC time after the upstream response copy completes or a proxy error is recorded. |

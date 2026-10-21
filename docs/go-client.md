@@ -10,6 +10,7 @@ proxy/server packages from [barzoj-co/llmentary](https://github.com/barzoj-co/ll
 Related references:
 
 - [Recorded trace data model](data-model.md)
+- [Control API contract](https://github.com/barzoj-co/llmentary/blob/main/api/control/openapi.yaml)
 - [Proxy, providers, and OTel](https://github.com/barzoj-co/llmentary) in the main repository
 
 ## Session per test
@@ -64,6 +65,26 @@ assert := lm.Expect(ctx, llmentary.MinCalls(2))
 on a session that never recorded a call fail with
 `no calls recorded for session <id>; known sessions: …`.
 
+`wait` on a session that was never created (or was `DELETE`d) depends on
+`min_calls`:
+
+| `min_calls` | Proxy status | Client error |
+|---|---|---|
+| `0` (default) | `404 session_not_found` immediately | `*SessionNotFoundError` (`IsSessionNotFound`) |
+| `>= 1` | `504 wait_timeout` after quiet / timeout | `*WaitTimeoutError` (`IsWaitTimeout`) |
+
+```go
+_, err := client.Wait(ctx, "ghost", 200*time.Millisecond, 3*time.Second)
+if llmentary.IsSessionNotFound(err) {
+    // min_calls=0: the session was never created
+}
+
+_, err = client.Wait(ctx, "ghost", 200*time.Millisecond, 3*time.Second, llmentary.MinCalls(1))
+if llmentary.IsWaitTimeout(err) {
+    // min_calls>=1: the proxy waited for a call that never arrived
+}
+```
+
 `lm.Version(ctx)` / `client.Version(ctx)` reads `GET /config` `version`.
 
 | Setting | Default | Environment variable |
@@ -112,7 +133,10 @@ router := trace.Query().WithoutTools()
 specialist := trace.Query().OffersTool("get_risks")
 ```
 
-`Summary()` prints `#<seq>` so `Mark` / `Since` can be compared to the trace.
+`Summary()` prints `#<seq> (<id>)` so `Mark` / `Since` can be compared to
+the trace. Call ids are unique across sessions in one proxy process; `seq`
+is 1-based within the session. Do not treat `call_1` as "first call of this
+session".
 
 Scoped assertions operate only on the filtered calls:
 
@@ -147,7 +171,23 @@ Each `Call` exposes `SessionSource` (`header`, `baggage`, `path`, or
 ```go
 src := call.SessionSource
 upstream := call.UpstreamURL()
+texts := call.UserTexts() // user-role turns only
 ```
+
+A path prefix isolates the SDK client that uses it, not every conversation
+in one process. One env-configured client is one session. Prove two
+sessions stayed apart with `IsolatedFrom`, not substring search over raw
+request JSON (system prompts and tool names will false-positive). See
+[black-box isolation](https://github.com/barzoj-co/llmentary/blob/main/docs/black-box.md).
+
+```go
+lm.Expect(ctx).IsolatedFrom(other.SessionID())
+lm.Expect(ctx).IsolatedFrom(other.SessionID(), llmentary.RequirePathSource())
+```
+
+`IsolatedFrom` checks `session_id` on every call, that no call id appears
+in both sessions, and that user-role texts do not overlap. An empty
+session fails unless `AllowEmpty`.
 
 ## Tool assertions
 
@@ -258,7 +298,7 @@ expected tool "get_weather" to be called
 
 Trace summary:
 session 9f...: 2 call(s)
-  #1 openai openai.chat status=200 finish=tool_calls model=gpt-4.1-mini/gpt-4.1-mini latency=730ms retry=0 spec=not checked src=path tokens=120/18
+  #1 (call_1) openai openai.chat status=200 finish=tool_calls model=gpt-4.1-mini/gpt-4.1-mini latency=730ms retry=0 spec=not checked src=path tokens=120/18
     tool[0] get_weather args={"city":"Paris"}
 ```
 

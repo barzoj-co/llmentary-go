@@ -113,6 +113,8 @@ Black-box and sidecar recipes:
 [docs/black-box.md](https://github.com/barzoj-co/llmentary/blob/main/docs/black-box.md).
 When to assert on the trace vs the model's wording:
 [docs/assertions-guide.md](https://github.com/barzoj-co/llmentary/blob/main/docs/assertions-guide.md).
+Control API contract:
+[api/control/openapi.yaml](https://github.com/barzoj-co/llmentary/blob/main/api/control/openapi.yaml).
 
 The same API is exercised without a live provider in
 [`examples/go/weather_test.go`](examples/go/weather_test.go), which starts the
@@ -139,6 +141,13 @@ assert.TokensBelow(1000)
 `NoErrors` / `ToolNotCalled` fail when a filter or `Since` matches zero calls.
 Use `llmentary.AllowEmpty()` only when the test intends an empty match.
 
+`Call.ID` is unique across sessions in one proxy process; `Call.Seq` is
+1-based within the session. `Summary()` prints `#<seq> (<id>)`.
+
+Prove two path-prefix sessions stayed apart with
+`lm.Expect(ctx).IsolatedFrom(other.SessionID())` (user-role turns only;
+system prompts and tool names are not compared).
+
 See [docs/go-client.md](docs/go-client.md) for the full session, query, and
 assertion API.
 
@@ -159,6 +168,21 @@ Each variable accepts a Go duration (`45s`, `200ms`) or bare seconds (`45`,
 X (k calls so far, still active: n). Raise LLMENTARY_WAIT_TIMEOUT` if the
 graph needs more time. The client HTTP timeout is `timeout + quiet + 5s` so
 the request is not aborted before the proxy answers.
+
+`wait` on a never-created session: `404 session_not_found` immediately when
+`min_calls=0` (`IsSessionNotFound`); `504 wait_timeout` after quiet when
+`min_calls>=1` (`IsWaitTimeout`).
+
+```go
+_, err := client.Wait(ctx, "ghost", 200*time.Millisecond, 3*time.Second)
+if llmentary.IsSessionNotFound(err) {
+    // min_calls=0: the session was never created
+}
+_, err = client.Wait(ctx, "ghost", 200*time.Millisecond, 3*time.Second, llmentary.MinCalls(1))
+if llmentary.IsWaitTimeout(err) {
+    // min_calls>=1: waited for a call that never arrived
+}
+```
 
 <!-- llmentary-repos:start -->
 ## llmentary repositories

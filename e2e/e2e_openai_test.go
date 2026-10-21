@@ -626,6 +626,175 @@ func runE2EToolResultAndMentionsAny(t *testing.T) {
 	assert.FinalResponseMentionsAny("20", "sunny")
 }
 
+func TestE2EWaitNeverCreatedSession(t *testing.T) {
+	apiKey := requireOpenAIKey(t)
+	proxy := startE2EProxy(t)
+	client, err := llmentary.NewClient(proxy.ControlURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ghost := "ghost-" + llmentary.NewSessionID()
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+
+	t.Run("min_calls_0_session_not_found", func(t *testing.T) {
+		_, err := client.Wait(ctx, ghost, 50*time.Millisecond, 2*time.Second)
+		if !llmentary.IsSessionNotFound(err) {
+			t.Skipf("proxy wait min_calls=0 on a never-created session returned %v; 404 session_not_found needs the unreleased proxy DOG-17 change", err)
+		}
+	})
+
+	t.Run("min_calls_1_wait_timeout", func(t *testing.T) {
+		_, err := client.Wait(ctx, ghost, 50*time.Millisecond, 400*time.Millisecond, llmentary.MinCalls(1))
+		if !llmentary.IsWaitTimeout(err) {
+			t.Fatalf("min_calls>=1 on a never-created session want WaitTimeoutError, got %v", err)
+		}
+		if !strings.Contains(err.Error(), ghost) {
+			t.Fatalf("timeout %q should name %s", err, ghost)
+		}
+	})
+
+	lm := sessionOnProxy(t, proxy, llmentary.WithSessionID(ghost), llmentary.WithWait(200*time.Millisecond, 30*time.Second))
+	oa := openai.NewClient(
+		option.WithAPIKey(apiKey),
+		option.WithBaseURL(lm.PathBaseURL("openai")),
+		option.WithMaxRetries(0),
+	)
+	_, err = oa.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
+		Model:       e2eModel(),
+		Temperature: param.NewOpt(0.0),
+		Messages: []openai.ChatCompletionMessageParamUnion{
+			openai.UserMessage("Reply with the single word ok."),
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trace, err := client.Wait(ctx, ghost, 200*time.Millisecond, 30*time.Second, llmentary.MinCalls(1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(trace) != 1 {
+		t.Fatalf("wait(min_calls=1) after one real call got %d calls", len(trace))
+	}
+}
+
+func TestE2ECallSeqPerSessionAndGlobalIDs(t *testing.T) {
+	apiKey := requireOpenAIKey(t)
+	proxy := startE2EProxy(t)
+	lmA := sessionOnProxy(t, proxy)
+	lmB := sessionOnProxy(t, proxy)
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+
+	chat := func(lm *llmentary.Session, prompt string) {
+		t.Helper()
+		oa := openai.NewClient(
+			option.WithAPIKey(apiKey),
+			option.WithBaseURL(lm.OpenAIBaseURL("openai")),
+			option.WithHTTPClient(lm.HTTPClient()),
+			option.WithMaxRetries(0),
+		)
+		if _, err := oa.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
+			Model:       e2eModel(),
+			Temperature: param.NewOpt(0.0),
+			Messages: []openai.ChatCompletionMessageParamUnion{
+				openai.UserMessage(prompt),
+			},
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	chat(lmA, "Reply with the single word alpha.")
+	chat(lmB, "Reply with the single word beta.")
+	chat(lmA, "Reply with the single word gamma.")
+
+	a := lmA.Wait(ctx, llmentary.MinCalls(2))
+	b := lmB.Wait(ctx, llmentary.MinCalls(1))
+	if len(a.Calls) != 2 || a.Calls[0].Seq != 1 || a.Calls[1].Seq != 2 {
+		t.Fatalf("session A seqs=%v\n%s", seqs(a.Calls), a.Summary())
+	}
+	if len(b.Calls) != 1 || b.Calls[0].Seq != 1 {
+		t.Fatalf("session B want seq=1, got %v\n%s", seqs(b.Calls), b.Summary())
+	}
+	if b.Calls[0].ID == "" || b.Calls[0].ID == "call_1" {
+		t.Fatalf("session B's first call should not be process-global call_1, got %q\n%s", b.Calls[0].ID, b.Summary())
+	}
+	if !strings.Contains(b.Summary(), "#1 ("+b.Calls[0].ID+")") {
+		t.Fatalf("summary missing #1 (%s):\n%s", b.Calls[0].ID, b.Summary())
+	}
+}
+
+func TestE2EIsolatedFromPathSessions(t *testing.T) {
+	apiKey := requireOpenAIKey(t)
+	proxy := startE2EProxy(t)
+	lmA := sessionOnProxy(t, proxy)
+	lmB := sessionOnProxy(t, proxy)
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+
+	system := "You are concise. The other conversation is about Amsterdam tulips. Do not mention tulips."
+	chatPath := func(lm *llmentary.Session, user string) {
+		t.Helper()
+		oa := openai.NewClient(
+			option.WithAPIKey(apiKey),
+			option.WithBaseURL(lm.PathBaseURL("openai")),
+			option.WithMaxRetries(0),
+		)
+		if _, err := oa.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
+			Model:       e2eModel(),
+			Temperature: param.NewOpt(0.0),
+			Messages: []openai.ChatCompletionMessageParamUnion{
+				openai.SystemMessage(system),
+				openai.UserMessage(user),
+			},
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	chatPath(lmA, "What is the capital of France? Reply with only the city name.")
+	chatPath(lmB, "Describe Amsterdam tulips in one word.")
+
+	if !lmA.Expect(ctx).IsolatedFrom(lmB.SessionID(), llmentary.RequirePathSource()) {
+		t.Fatal("session A should be isolated from B")
+	}
+	if !lmB.Expect(ctx).IsolatedFrom(lmA.SessionID(), llmentary.RequirePathSource()) {
+		t.Fatal("session B should be isolated from A")
+	}
+}
+
+func startE2EProxy(t *testing.T) *llmentary.Proxy {
+	t.Helper()
+	if _, err := llmentary.ResolveBinary(); err != nil {
+		t.Fatalf("llmentary proxy binary is required for e2e: %v", err)
+	}
+	return llmentary.StartForTest(t,
+		llmentary.WithStartTimeout(15*time.Second),
+		llmentary.WithUpstream("openai=https://api.openai.com/v1"),
+	)
+}
+
+func sessionOnProxy(t *testing.T, proxy *llmentary.Proxy, opts ...llmentary.Option) *llmentary.Session {
+	t.Helper()
+	sessionOpts := []llmentary.Option{
+		llmentary.WithProxyURL(proxy.ProxyURL),
+		llmentary.WithControlURL(proxy.ControlURL),
+		llmentary.WithWait(200*time.Millisecond, 30*time.Second),
+	}
+	sessionOpts = append(sessionOpts, opts...)
+	return llmentary.New(t, sessionOpts...)
+}
+
+func seqs(calls []llmentary.Call) []int {
+	out := make([]int, len(calls))
+	for i, c := range calls {
+		out[i] = c.Seq
+	}
+	return out
+}
+
 func requireOpenAIKey(t *testing.T) string {
 	t.Helper()
 	apiKey := os.Getenv("OPENAI_API_KEY")

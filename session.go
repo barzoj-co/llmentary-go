@@ -6,7 +6,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -230,7 +229,7 @@ func (lm *Session) Wait(ctx context.Context, opts ...WaitOption) Trace {
 	lm.t.Helper()
 	calls, err := lm.client.Wait(ctx, lm.sessionID, lm.quiet, lm.timeout, opts...)
 	if err != nil {
-		lm.fatalControl(ctx, "wait", err)
+		lm.fatalControl("wait", err)
 	}
 	return Trace{SessionID: lm.sessionID, Calls: calls}
 }
@@ -239,7 +238,7 @@ func (lm *Session) Calls(ctx context.Context) Trace {
 	lm.t.Helper()
 	calls, err := lm.client.Calls(ctx, lm.sessionID)
 	if err != nil {
-		lm.fatalControl(ctx, "fetch", err)
+		lm.fatalControl("fetch", err)
 	}
 	return Trace{SessionID: lm.sessionID, Calls: calls}
 }
@@ -261,14 +260,17 @@ func (lm *Session) assertions(ctx context.Context, fatal bool, opts ...WaitOptio
 	if wo.Since != nil {
 		q := full.Query().Since(*wo.Since)
 		wo.Since = nil
-		return q.newAssertions(lm.t, fatal, wo)
+		a := q.newAssertions(lm.t, fatal, wo)
+		a.client = lm.client
+		a.ctx = ctx
+		return a
 	}
 	if len(full.Calls) == 0 {
-		a := &Assertions{t: lm.t, trace: full, sessionTrace: full, fatal: fatal, allowEmpty: wo.AllowEmpty}
+		a := &Assertions{t: lm.t, trace: full, sessionTrace: full, fatal: fatal, allowEmpty: wo.AllowEmpty, client: lm.client, ctx: ctx}
 		a.failNoCalls(lm.knownIDs(ctx))
 		return a
 	}
-	return &Assertions{t: lm.t, trace: full, sessionTrace: full, fatal: fatal, allowEmpty: wo.AllowEmpty}
+	return &Assertions{t: lm.t, trace: full, sessionTrace: full, fatal: fatal, allowEmpty: wo.AllowEmpty, client: lm.client, ctx: ctx}
 }
 
 // Mark snapshots the highest recorded seq so later Since(m) can scope a turn.
@@ -279,7 +281,7 @@ func (lm *Session) Mark(ctx context.Context) Mark {
 		if IsSessionNotFound(err) {
 			return Mark{Seq: 0}
 		}
-		lm.fatalControl(ctx, "mark", err)
+		lm.fatalControl("mark", err)
 	}
 	maxSeq := 0
 	for _, call := range calls {
@@ -290,16 +292,10 @@ func (lm *Session) Mark(ctx context.Context) Mark {
 	return Mark{Seq: maxSeq}
 }
 
-func (lm *Session) fatalControl(ctx context.Context, op string, err error) {
+func (lm *Session) fatalControl(op string, err error) {
 	lm.t.Helper()
 	if IsSessionNotFound(err) {
 		lm.t.Fatalf("llmentary: %s session %s: %v\n\nTrace summary:\n%s", op, lm.sessionID, err, Trace{SessionID: lm.sessionID}.Summary())
-	}
-	var timeout *WaitTimeoutError
-	if errors.As(err, &timeout) && len(timeout.Calls) == 0 && timeout.CallsSeen == 0 {
-		known := lm.knownIDs(ctx)
-		snf := newSessionNotFound(lm.sessionID, known, err)
-		lm.t.Fatalf("llmentary: %s session %s: %v\n\nTrace summary:\n%s", op, lm.sessionID, snf, Trace{SessionID: lm.sessionID}.Summary())
 	}
 	lm.t.Fatalf("llmentary: %s session %s: %v", op, lm.sessionID, err)
 }
@@ -323,7 +319,7 @@ func (tr Trace) Summary() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "session %s: %d call(s)\n", tr.SessionID, len(tr.Calls))
 	for _, call := range tr.Calls {
-		fmt.Fprintf(&b, "  #%d %s %s status=%d", call.Seq, call.Provider, call.APIFamily, call.HTTPStatus)
+		fmt.Fprintf(&b, "  #%d (%s) %s %s status=%d", call.Seq, call.ID, call.Provider, call.APIFamily, call.HTTPStatus)
 		if finish := strings.TrimSpace(call.Normalized.FinishReason); finish != "" && !strings.EqualFold(finish, "unknown") {
 			fmt.Fprintf(&b, " finish=%s", finish)
 		}
@@ -492,6 +488,8 @@ type Assertions struct {
 	allowEmpty    bool
 	fatal         bool
 	summaryQueued bool
+	client        *Client
+	ctx           context.Context
 }
 
 func (a *Assertions) Trace() Trace {
