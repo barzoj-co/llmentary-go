@@ -6,13 +6,16 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"path"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -320,12 +323,9 @@ func TestIsolationVectorsMatchPinnedProxy(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	remote, err := fetchProxyIsolationVectors(ctx, ProxyVersion)
+	remote, err := fetchProxyIsolationVectors(ctx)
 	if err != nil {
-		t.Fatal(err)
-	}
-	if remote == nil {
-		t.Fatalf("proxy testdata/isolation not found at refs %v", isolationVectorRefs(ProxyVersion))
+		reportIsolationVectorFetch(t, err, os.Getenv("LLMENTARY_LIVE_DOWNLOAD") == "1")
 	}
 	if err := diffIsolationVectorFiles(local, remote); err != nil {
 		t.Fatal(err)
@@ -344,10 +344,10 @@ func isolationCall(sessionID, id string, seq int, source, raw string) Call {
 
 const isolationVectorDir = "testdata/isolation"
 
-// isolationVectorsProxyRef is the proxy DOG-29 branch that publishes
-// testdata/isolation/*.json and testdata/isolation/README.md
-// (barzoj-co/llmentary#35). Override with LLMENTARY_ISOLATION_VECTORS_REF.
-const isolationVectorsProxyRef = "cursor/dog-29-isolation-spec-f2b6"
+// isolationVectorsProxyRef is the proxy git ref that publishes
+// testdata/isolation (DOG-29 / barzoj-co/llmentary#35, merged as bb39133).
+// Override with LLMENTARY_ISOLATION_VECTORS_REF.
+const isolationVectorsProxyRef = "main"
 
 type isolationVector struct {
 	ID          string                `json:"id"`
@@ -524,41 +524,81 @@ func isolationVectorTrace(sessionID string, calls []isolationVectorCall) (Trace,
 	return Trace{SessionID: sessionID, Calls: out}, nil
 }
 
-func isolationVectorRefs(version string) []string {
+func isolationVectorRef() string {
 	if env := strings.TrimSpace(os.Getenv("LLMENTARY_ISOLATION_VECTORS_REF")); env != "" {
-		return []string{env}
+		return env
 	}
-	refs := []string{isolationVectorsProxyRef}
-	if tag, _ := normalizeReleaseVersion(version); tag != "" && tag != isolationVectorsProxyRef {
-		refs = append(refs, tag)
-	}
-	return refs
+	return isolationVectorsProxyRef
 }
 
-func fetchProxyIsolationVectors(ctx context.Context, version string) (map[string][]byte, error) {
+type isolationVectorHTTPError struct {
+	Status int
+	Ref    string
+	URL    string
+}
+
+func (e isolationVectorHTTPError) Error() string {
+	return fmt.Sprintf("GET %s: status=%d (ref %s)", e.URL, e.Status, e.Ref)
+}
+
+func isolationVectorDeniedDisposition(err error, liveDownload bool) (action, msg string, handled bool) {
+	var httpErr isolationVectorHTTPError
+	if !errors.As(err, &httpErr) || (httpErr.Status != http.StatusNotFound && httpErr.Status != http.StatusForbidden) {
+		return "", "", false
+	}
+	msg = fmt.Sprintf("proxy testdata/isolation: HTTP %d at ref %s — cannot compare vendored copy", httpErr.Status, httpErr.Ref)
+	if liveDownload {
+		return "fail", msg, true
+	}
+	return "skip", msg, true
+}
+
+func reportIsolationVectorFetch(t *testing.T, err error, liveDownload bool) {
+	t.Helper()
+	if action, msg, ok := isolationVectorDeniedDisposition(err, liveDownload); ok {
+		if action == "fail" {
+			t.Fatal(msg)
+		}
+		t.Skip(msg)
+	}
+	t.Fatal(err)
+}
+
+func httpStatusFromError(err error) (int, bool) {
+	if err == nil {
+		return 0, false
+	}
+	const prefix = "status="
+	msg := err.Error()
+	i := strings.LastIndex(msg, prefix)
+	if i < 0 {
+		return 0, false
+	}
+	rest := strings.TrimSpace(msg[i+len(prefix):])
+	if j := strings.IndexAny(rest, " \t("); j >= 0 {
+		rest = rest[:j]
+	}
+	n, convErr := strconv.Atoi(rest)
+	if convErr != nil {
+		return 0, false
+	}
+	return n, true
+}
+
+func fetchProxyIsolationVectors(ctx context.Context) (map[string][]byte, error) {
 	token := firstNonEmpty(os.Getenv("LLMENTARY_GITHUB_TOKEN"), os.Getenv("GH_TOKEN"), os.Getenv("GITHUB_TOKEN"), os.Getenv("LLMTESTLAB_REPO_TOKEN"))
-	for _, ref := range isolationVectorRefs(version) {
-		files, missing, err := fetchGitHubIsolationDir(ctx, ref, token)
-		if err != nil {
-			return nil, err
-		}
-		if missing {
-			continue
-		}
-		return files, nil
-	}
-	return nil, nil
+	ref := isolationVectorRef()
+	return fetchGitHubIsolationDir(ctx, strings.TrimRight(defaultGitHubAPIRoot, "/"), ref, token)
 }
 
-func fetchGitHubIsolationDir(ctx context.Context, ref, token string) (map[string][]byte, bool, error) {
-	apiRoot := strings.TrimRight(defaultGitHubAPIRoot, "/")
-	listURL := apiRoot + "/repos/" + defaultReleaseRepo + "/contents/testdata/isolation?ref=" + url.QueryEscape(ref)
+func fetchGitHubIsolationDir(ctx context.Context, apiRoot, ref, token string) (map[string][]byte, error) {
+	listURL := strings.TrimRight(apiRoot, "/") + "/repos/" + defaultReleaseRepo + "/contents/testdata/isolation?ref=" + url.QueryEscape(ref)
 	body, err := httpGetBytesAccept(ctx, http.DefaultClient, listURL, token, 1<<20, "application/vnd.github+json")
 	if err != nil {
-		if strings.Contains(err.Error(), "status=404") {
-			return nil, true, nil
+		if status, ok := httpStatusFromError(err); ok && (status == http.StatusNotFound || status == http.StatusForbidden) {
+			return nil, isolationVectorHTTPError{Status: status, Ref: ref, URL: listURL}
 		}
-		return nil, false, err
+		return nil, err
 	}
 	var entries []struct {
 		Name        string `json:"name"`
@@ -566,7 +606,7 @@ func fetchGitHubIsolationDir(ctx context.Context, ref, token string) (map[string
 		DownloadURL string `json:"download_url"`
 	}
 	if err := json.Unmarshal(body, &entries); err != nil {
-		return nil, false, fmt.Errorf("parse isolation dir at %s: %w", ref, err)
+		return nil, fmt.Errorf("parse isolation dir at %s: %w", ref, err)
 	}
 	out := map[string][]byte{}
 	for _, entry := range entries {
@@ -577,18 +617,21 @@ func fetchGitHubIsolationDir(ctx context.Context, ref, token string) (map[string
 			continue
 		}
 		if entry.DownloadURL == "" {
-			return nil, false, fmt.Errorf("isolation file %s at %s has no download_url", entry.Name, ref)
+			return nil, fmt.Errorf("isolation file %s at %s has no download_url", entry.Name, ref)
 		}
 		data, err := httpGetBytesAccept(ctx, http.DefaultClient, entry.DownloadURL, token, 1<<20, "application/vnd.github.raw")
 		if err != nil {
-			return nil, false, fmt.Errorf("download %s: %w", entry.Name, err)
+			if status, ok := httpStatusFromError(err); ok && (status == http.StatusNotFound || status == http.StatusForbidden) {
+				return nil, isolationVectorHTTPError{Status: status, Ref: ref, URL: entry.DownloadURL}
+			}
+			return nil, fmt.Errorf("download %s: %w", entry.Name, err)
 		}
 		out[path.Base(entry.Name)] = data
 	}
 	if len(out) == 0 {
-		return nil, true, nil
+		return nil, fmt.Errorf("proxy testdata/isolation is empty at ref %s", ref)
 	}
-	return out, false, nil
+	return out, nil
 }
 
 func diffIsolationVectorFiles(local, remote map[string][]byte) error {
@@ -636,4 +679,52 @@ func bytesEqualJSON(a, b []byte) bool {
 		return jsonDeepEqual(left, right)
 	}
 	return string(a) == string(b)
+}
+
+func TestIsolationVectorRefIsProxyMain(t *testing.T) {
+	t.Setenv("LLMENTARY_ISOLATION_VECTORS_REF", "")
+	if isolationVectorsProxyRef != "main" {
+		t.Fatalf("isolationVectorsProxyRef=%q want main", isolationVectorsProxyRef)
+	}
+	if got := isolationVectorRef(); got != "main" {
+		t.Fatalf("isolationVectorRef()=%q want main", got)
+	}
+	t.Setenv("LLMENTARY_ISOLATION_VECTORS_REF", "feature-branch")
+	if got := isolationVectorRef(); got != "feature-branch" {
+		t.Fatalf("override isolationVectorRef()=%q", got)
+	}
+}
+
+func TestIsolationVectorFetchDeniedNeverPasses(t *testing.T) {
+	for _, status := range []int{http.StatusNotFound, http.StatusForbidden} {
+		err := isolationVectorHTTPError{Status: status, Ref: "main", URL: "https://example.test/isolation"}
+		action, msg, ok := isolationVectorDeniedDisposition(err, true)
+		if !ok || action != "fail" || !strings.Contains(msg, fmt.Sprintf("HTTP %d", status)) {
+			t.Fatalf("live HTTP %d: action=%q msg=%q ok=%v", status, action, msg, ok)
+		}
+		action, msg, ok = isolationVectorDeniedDisposition(err, false)
+		if !ok || action != "skip" || !strings.Contains(msg, fmt.Sprintf("HTTP %d", status)) {
+			t.Fatalf("offline HTTP %d: action=%q msg=%q ok=%v", status, action, msg, ok)
+		}
+	}
+	if _, _, ok := isolationVectorDeniedDisposition(errors.New("GET x: status=500"), true); ok {
+		t.Fatal("500 must not be treated as a denied compare")
+	}
+}
+
+func TestFetchGitHubIsolationDirDeniedIsError(t *testing.T) {
+	for _, status := range []int{http.StatusNotFound, http.StatusForbidden} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(status)
+		}))
+		_, err := fetchGitHubIsolationDir(context.Background(), srv.URL, "main", "")
+		srv.Close()
+		var httpErr isolationVectorHTTPError
+		if !errors.As(err, &httpErr) || httpErr.Status != status || httpErr.Ref != "main" {
+			t.Fatalf("status %d: err=%v", status, err)
+		}
+		if action, _, ok := isolationVectorDeniedDisposition(err, true); !ok || action != "fail" {
+			t.Fatalf("status %d must fail the live drift check, action=%q ok=%v", status, action, ok)
+		}
+	}
 }
