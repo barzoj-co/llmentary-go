@@ -5,7 +5,7 @@ Workflows live under `.github/workflows/`. The main pipeline is `ci.yml`:
 - `lint`: `go vet` and a pinned `golangci-lint`
 - `test`: unit tests (`go test ./...`) and tokenless Codecov upload (`unit`)
 - `integration`: non-fork pull requests and pushes to `main`; downloads the
-  pinned `ProxyVersion` GitHub Release of `barzoj-co/llmentary` (`v0.2.0`)
+  pinned `ProxyVersion` GitHub Release of `barzoj-co/llmentary` (`v0.2.1`)
   with `llmentary.DownloadRelease` (checksum-verified). The existing
   `secrets.LLMTESTLAB_REPO_TOKEN` is passed as `GH_TOKEN` (never in a URL or
   log) so the private release download does not use the default Actions
@@ -13,7 +13,7 @@ Workflows live under `.github/workflows/`. The main pipeline is `ci.yml`:
   `coverage-integration.out` tokenless
 - `e2e`: same event filter as `integration`; uses the `openai-e2e` environment
   so each live run waits for maintainer approval; installs the same released
-  `v0.2.0` binary (no build from proxy main), downloads and compiles the
+  `v0.2.1` binary (no build from proxy main), downloads and compiles the
   e2e module without secrets, then runs the live OpenAI suite
 - `e2e-gate`: always runs; green only when `e2e` succeeded. This is the check
   to require, not `e2e` itself (a skipped required check is treated as passing).
