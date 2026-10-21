@@ -47,6 +47,7 @@ run_gate() {
     "$CODECOV_YML" "$REQUIRE_INTEGRATION" "$(head_branch)" "$RELEASE_THRESHOLD" <<'PY'
 from __future__ import annotations
 
+import math
 import pathlib
 import re
 import sys
@@ -176,6 +177,8 @@ else:
         threshold = float(raw)
     except ValueError:
         die(f"invalid threshold in {threshold_path}: {raw}")
+    if not math.isfinite(threshold):
+        die(f"invalid threshold in {threshold_path}: {raw}")
     if threshold_path.is_relative_to(root):
         source = str(threshold_path.relative_to(root))
     else:
@@ -284,6 +287,24 @@ EOF
 
   run_case missing-unit 1 "missing unit coverprofile" \
     env UNIT_PROFILE="${tmp}/no-unit.out" \
+    INTEGRATION_PROFILE="${tmp}/coverage-integration.out" \
+    THRESHOLD_FILE="${tmp}/.coverage-threshold" \
+    CODECOV_YML="${tmp}/codecov.yml" \
+    GITHUB_HEAD_REF="" GITHUB_REF_NAME="main" \
+    bash "${ROOT}/scripts/coverage-gate.sh" || failed=1
+
+  printf 'NaN\n' >"${tmp}/.coverage-threshold"
+  run_case nan-threshold 1 "invalid threshold" \
+    env UNIT_PROFILE="${tmp}/coverage-unit.out" \
+    INTEGRATION_PROFILE="${tmp}/coverage-integration.out" \
+    THRESHOLD_FILE="${tmp}/.coverage-threshold" \
+    CODECOV_YML="${tmp}/codecov.yml" \
+    GITHUB_HEAD_REF="" GITHUB_REF_NAME="main" \
+    bash "${ROOT}/scripts/coverage-gate.sh" || failed=1
+
+  printf 'Inf\n' >"${tmp}/.coverage-threshold"
+  run_case inf-threshold 1 "invalid threshold" \
+    env UNIT_PROFILE="${tmp}/coverage-unit.out" \
     INTEGRATION_PROFILE="${tmp}/coverage-integration.out" \
     THRESHOLD_FILE="${tmp}/.coverage-threshold" \
     CODECOV_YML="${tmp}/codecov.yml" \
