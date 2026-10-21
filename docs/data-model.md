@@ -16,7 +16,7 @@ is `llmentary.Session` (`lm := llmentary.New(t)`).
 
 | Field | Type | Meaning |
 |---|---|---|
-| `id` | string | Session id from `X-Test-Session`, baggage, or `default`. |
+| `id` | string | Session id from `X-Test-Session`, baggage, `/s/{session}` path, or `default`. |
 | `calls` | array of `Call` | Calls recorded for the session in sequence order. |
 
 ## Call
@@ -63,7 +63,7 @@ is `llmentary.Session` (`lm := llmentary.New(t)`).
 |---|---|---|
 | `id` | string | Proxy-generated id, currently `call_` plus base-36 counter. |
 | `session_id` | string | Session bucket. |
-| `session_source` | string | `header`, `baggage`, or `default`. |
+| `session_source` | string | `header`, `baggage`, `path`, or `default`. Go: `Call.SessionSource`. |
 | `seq` | number | 1-based order within the session. |
 | `started_at` | timestamp | UTC time before the upstream request starts. |
 | `first_byte_at` | timestamp, optional | UTC time when the first upstream response byte is copied to the client. |
@@ -71,7 +71,7 @@ is `llmentary.Session` (`lm := llmentary.New(t)`).
 | `latency_ms` | number | `ended_at - started_at` in milliseconds. |
 | `provider` | string | Upstream route name. |
 | `api_family` | string | `openai.chat`, `openai.responses`, or `passthrough`. |
-| `upstream` | object | Method, redacted URL, Azure API version, and Azure deployment when available. |
+| `upstream` | object | Method, redacted URL, Azure API version, and Azure deployment when available. Go: `Call.UpstreamURL()`. |
 | `request.headers` | object | Recorded request headers with secret headers hashed. |
 | `response.headers` | object | Recorded response headers with secret headers hashed. |
 | `request_ids` | object | Response IDs from selected headers/body fields. |

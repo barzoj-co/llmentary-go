@@ -13,6 +13,7 @@ import (
 	"os"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -256,15 +257,18 @@ func (lm *Session) Check(ctx context.Context, opts ...WaitOption) *Assertions {
 func (lm *Session) assertions(ctx context.Context, fatal bool, opts ...WaitOption) *Assertions {
 	lm.t.Helper()
 	wo := applyWaitOptions(opts)
-	trace := lm.Wait(ctx, opts...)
+	full := lm.Wait(ctx, opts...)
 	if wo.Since != nil {
-		trace = trace.Query().Since(*wo.Since).Trace()
-	} else if len(trace.Calls) == 0 {
-		a := &Assertions{t: lm.t, trace: trace, fatal: fatal}
+		q := full.Query().Since(*wo.Since)
+		wo.Since = nil
+		return q.newAssertions(lm.t, fatal, wo)
+	}
+	if len(full.Calls) == 0 {
+		a := &Assertions{t: lm.t, trace: full, sessionTrace: full, fatal: fatal, allowEmpty: wo.AllowEmpty}
 		a.failNoCalls(lm.knownIDs(ctx))
 		return a
 	}
-	return &Assertions{t: lm.t, trace: trace, fatal: fatal}
+	return &Assertions{t: lm.t, trace: full, sessionTrace: full, fatal: fatal, allowEmpty: wo.AllowEmpty}
 }
 
 // Mark snapshots the highest recorded seq so later Since(m) can scope a turn.
@@ -319,8 +323,11 @@ func (tr Trace) Summary() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "session %s: %d call(s)\n", tr.SessionID, len(tr.Calls))
 	for _, call := range tr.Calls {
-		fmt.Fprintf(&b, "  #%d %s %s status=%d finish=%s model=%s/%s latency=%dms retry=",
-			call.Seq, call.Provider, call.APIFamily, call.HTTPStatus, call.Normalized.FinishReason,
+		fmt.Fprintf(&b, "  #%d %s %s status=%d", call.Seq, call.Provider, call.APIFamily, call.HTTPStatus)
+		if finish := strings.TrimSpace(call.Normalized.FinishReason); finish != "" && !strings.EqualFold(finish, "unknown") {
+			fmt.Fprintf(&b, " finish=%s", finish)
+		}
+		fmt.Fprintf(&b, " model=%s/%s latency=%dms retry=",
 			call.Normalized.Model.Requested, call.Normalized.Model.Returned, call.LatencyMS)
 		if call.RetryCount == nil {
 			b.WriteString("unknown")
@@ -328,6 +335,12 @@ func (tr Trace) Summary() string {
 			fmt.Fprintf(&b, "%d", *call.RetryCount)
 		}
 		fmt.Fprintf(&b, " spec=%s", call.specSummary())
+		if src := strings.TrimSpace(call.SessionSource); src != "" {
+			fmt.Fprintf(&b, " src=%s", src)
+		}
+		if tokens := call.tokenPair(); tokens != "" {
+			fmt.Fprintf(&b, " tokens=%s", tokens)
+		}
 		b.WriteByte('\n')
 		for _, tool := range call.Normalized.ToolCalls {
 			fmt.Fprintf(&b, "    tool[%d] %s args=%s\n", tool.Index, tool.Name, compactJSON(tool.ArgumentsRaw))
@@ -339,63 +352,105 @@ func (tr Trace) Summary() string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
+func (c Call) tokenPair() string {
+	usage := c.Normalized.Usage
+	if usage == nil || (usage.InputTokens == nil && usage.OutputTokens == nil) {
+		return ""
+	}
+	in, out := "-", "-"
+	if usage.InputTokens != nil {
+		in = strconv.Itoa(*usage.InputTokens)
+	}
+	if usage.OutputTokens != nil {
+		out = strconv.Itoa(*usage.OutputTokens)
+	}
+	return in + "/" + out
+}
+
 type Query struct {
-	trace Trace
-	calls []Call
+	trace      Trace
+	calls      []Call
+	filters    []string
+	allowEmpty bool
 }
 
 func (q Query) Calls() []Call { return append([]Call(nil), q.calls...) }
 func (q Query) Len() int      { return len(q.calls) }
 func (q Query) Trace() Trace  { return Trace{SessionID: q.trace.SessionID, Calls: q.Calls()} }
 
-func (q Query) Expect(t testing.TB) *Assertions {
-	t.Helper()
-	return &Assertions{t: t, trace: q.Trace(), fatal: true}
+// AllowEmpty lets NoErrors and ToolNotCalled pass when this query matches zero calls.
+func (q Query) AllowEmpty() Query {
+	q.allowEmpty = true
+	return q
 }
 
-func (q Query) Check(t testing.TB) *Assertions {
+func (q Query) Expect(t testing.TB, opts ...WaitOption) *Assertions {
 	t.Helper()
-	return &Assertions{t: t, trace: q.Trace()}
+	return q.newAssertions(t, true, applyWaitOptions(opts))
+}
+
+func (q Query) Check(t testing.TB, opts ...WaitOption) *Assertions {
+	t.Helper()
+	return q.newAssertions(t, false, applyWaitOptions(opts))
+}
+
+func (q Query) newAssertions(t testing.TB, fatal bool, wo WaitOptions) *Assertions {
+	filters := append([]string(nil), q.filters...)
+	calls := q.Calls()
+	if wo.Since != nil {
+		q = q.Since(*wo.Since)
+		filters = append([]string(nil), q.filters...)
+		calls = q.Calls()
+	}
+	return &Assertions{
+		t:            t,
+		trace:        Trace{SessionID: q.trace.SessionID, Calls: calls},
+		sessionTrace: q.trace,
+		filters:      filters,
+		allowEmpty:   q.allowEmpty || wo.AllowEmpty,
+		fatal:        fatal,
+	}
 }
 
 func (q Query) Upstream(name string) Query {
-	return q.keep(func(c Call) bool { return c.Provider == name })
+	return q.keep(fmt.Sprintf("upstream(%q)", name), func(c Call) bool { return c.Provider == name })
 }
 
 func (q Query) Model(model string) Query {
-	return q.keep(func(c Call) bool {
+	return q.keep(fmt.Sprintf("model(%q)", model), func(c Call) bool {
 		return c.Normalized.Model.Requested == model || c.Normalized.Model.Returned == model
 	})
 }
 
 func (q Query) APIType(apiType string) Query {
-	return q.keep(func(c Call) bool {
+	return q.keep(fmt.Sprintf("api_type(%q)", apiType), func(c Call) bool {
 		return c.APIFamily == apiType || strings.TrimPrefix(c.APIFamily, "openai.") == apiType
 	})
 }
 
 func (q Query) Status(status int) Query {
-	return q.keep(func(c Call) bool { return c.HTTPStatus == status })
+	return q.keep(fmt.Sprintf("status(%d)", status), func(c Call) bool { return c.HTTPStatus == status })
 }
 
 func (q Query) Errors() Query {
-	return q.keep(func(c Call) bool { return c.Normalized.Error != nil })
+	return q.keep("errors", func(c Call) bool { return c.Normalized.Error != nil })
 }
 
 func (q Query) Retries() Query {
-	return q.keep(func(c Call) bool { return c.RetryCount != nil && *c.RetryCount > 0 })
+	return q.keep("retries", func(c Call) bool { return c.RetryCount != nil && *c.RetryCount > 0 })
 }
 
 func (q Query) Index(i int) Query {
+	label := fmt.Sprintf("index(%d)", i)
 	if i < 0 || i >= len(q.calls) {
-		return Query{trace: q.trace}
+		return Query{trace: q.trace, filters: appendFilter(q.filters, label), allowEmpty: q.allowEmpty}
 	}
-	return Query{trace: q.trace, calls: []Call{q.calls[i]}}
+	return Query{trace: q.trace, calls: []Call{q.calls[i]}, filters: appendFilter(q.filters, label), allowEmpty: q.allowEmpty}
 }
 
 // OffersTool keeps calls that declared tool name in tools_declared.
 func (q Query) OffersTool(name string) Query {
-	return q.keep(func(c Call) bool {
+	return q.keep(fmt.Sprintf("offers_tool(%q)", name), func(c Call) bool {
 		for _, tool := range c.Normalized.ToolsDeclared {
 			if tool.Name == name {
 				return true
@@ -407,28 +462,36 @@ func (q Query) OffersTool(name string) Query {
 
 // WithoutTools keeps calls that offered no tools (router / structured-output).
 func (q Query) WithoutTools() Query {
-	return q.keep(func(c Call) bool { return len(c.Normalized.ToolsDeclared) == 0 })
+	return q.keep("without_tools", func(c Call) bool { return len(c.Normalized.ToolsDeclared) == 0 })
 }
 
 // Since keeps calls with seq greater than mark.Seq.
 func (q Query) Since(m Mark) Query {
-	return q.keep(func(c Call) bool { return c.Seq > m.Seq })
+	return q.keep(fmt.Sprintf("since=%d", m.Seq), func(c Call) bool { return c.Seq > m.Seq })
 }
 
-func (q Query) keep(fn func(Call) bool) Query {
+func (q Query) keep(label string, fn func(Call) bool) Query {
 	out := make([]Call, 0, len(q.calls))
 	for _, call := range q.calls {
 		if fn(call) {
 			out = append(out, call)
 		}
 	}
-	return Query{trace: q.trace, calls: out}
+	return Query{trace: q.trace, calls: out, filters: appendFilter(q.filters, label), allowEmpty: q.allowEmpty}
+}
+
+func appendFilter(filters []string, label string) []string {
+	return append(append([]string(nil), filters...), label)
 }
 
 type Assertions struct {
-	t     testing.TB
-	trace Trace
-	fatal bool
+	t             testing.TB
+	trace         Trace
+	sessionTrace  Trace
+	filters       []string
+	allowEmpty    bool
+	fatal         bool
+	summaryQueued bool
 }
 
 func (a *Assertions) Trace() Trace {
@@ -438,13 +501,39 @@ func (a *Assertions) Trace() Trace {
 func (a *Assertions) fail(format string, args ...any) bool {
 	a.t.Helper()
 	msg := fmt.Sprintf(format, args...)
-	msg += "\n\nTrace summary:\n" + a.trace.Summary()
 	if a.fatal {
-		a.t.Fatal(msg)
+		a.t.Fatal(msg + "\n\nTrace summary:\n" + a.summaryText())
 		return false
 	}
 	a.t.Error(msg)
+	a.queueSoftSummary()
 	return false
+}
+
+func (a *Assertions) summaryText() string {
+	if a.sessionTrace.SessionID != "" || len(a.sessionTrace.Calls) > 0 {
+		return a.sessionTrace.Summary()
+	}
+	return a.trace.Summary()
+}
+
+func (a *Assertions) queueSoftSummary() {
+	if a.summaryQueued {
+		return
+	}
+	a.summaryQueued = true
+	a.t.Cleanup(func() {
+		a.t.Helper()
+		a.t.Error("Trace summary:\n" + a.summaryText())
+	})
+}
+
+func (a *Assertions) requireMatchedCalls() bool {
+	a.t.Helper()
+	if a.allowEmpty || len(a.trace.Calls) > 0 || len(a.filters) == 0 {
+		return true
+	}
+	return a.fail("no calls matched query (%s); session has %d calls", strings.Join(a.filters, ", "), len(a.sessionTrace.Calls))
 }
 
 func (a *Assertions) failNoCalls(known []string) bool {
@@ -501,6 +590,9 @@ func (a *Assertions) ToolCalled(name string, opts ...ToolAssertionOption) bool {
 
 func (a *Assertions) ToolNotCalled(name string) bool {
 	a.t.Helper()
+	if !a.requireMatchedCalls() {
+		return false
+	}
 	if len(matchingTools(a.trace.Calls, name)) > 0 {
 		return a.fail("expected tool %q not to be called", name)
 	}
@@ -678,6 +770,9 @@ func (a *Assertions) TTFTBelow(d time.Duration) bool {
 
 func (a *Assertions) NoErrors() bool {
 	a.t.Helper()
+	if !a.requireMatchedCalls() {
+		return false
+	}
 	for _, call := range a.trace.Calls {
 		if call.Normalized.Error != nil {
 			return a.fail("unexpected error in call #%d: %+v", call.Seq, call.Normalized.Error)

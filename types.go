@@ -53,6 +53,11 @@ type Upstream struct {
 	Deployment string `json:"deployment,omitempty"`
 }
 
+// UpstreamURL is the recorded upstream URL, or "" when absent.
+func (c Call) UpstreamURL() string {
+	return c.Upstream.URL
+}
+
 type Exchange struct {
 	Headers map[string][]string `json:"headers,omitempty"`
 }

@@ -117,10 +117,36 @@ specialist := trace.Query().OffersTool("get_risks")
 Scoped assertions operate only on the filtered calls:
 
 ```go
-responses := trace.Query().APIType("responses").Expect(t)
-responses.CallCount(2)
-responses.ToolCalled("lookup")
-responses.NoErrors()
+mark := lm.Mark(ctx)
+// … next turn …
+turn := lm.Expect(ctx, llmentary.Since(mark))
+turn.CallCount(1)
+turn.NoErrors()
+
+router := trace.Query().WithoutTools()
+router.Expect(t).CallCount(1)
+router.Expect(t).NoErrors()
+```
+
+`NoErrors` and `ToolNotCalled` fail when a filter or `Since` matches zero
+calls (`no calls matched query (without_tools, since=3); session has 8 calls`).
+That is the empty-trace guard: a missing router turn must not look like a
+clean one. Opt out with `llmentary.AllowEmpty()` on `Expect` / `Check`, or
+`Query.AllowEmpty()`, when the test really expects zero matches. `CallCount(0)`
+still asserts an empty match without the opt-out.
+
+```go
+lm.Expect(ctx, llmentary.Since(mark), llmentary.AllowEmpty()).NoErrors()
+trace.Query().OffersTool("missing").AllowEmpty().Expect(t).ToolNotCalled("x")
+```
+
+Each `Call` exposes `SessionSource` (`header`, `baggage`, `path`, or
+`default`) and `UpstreamURL()` (the recorded upstream URL, never the
+`/s/{session}` listen prefix).
+
+```go
+src := call.SessionSource
+upstream := call.UpstreamURL()
 ```
 
 ## Tool assertions
@@ -232,9 +258,15 @@ expected tool "get_weather" to be called
 
 Trace summary:
 session 9f...: 2 call(s)
-  #1 openai openai.chat status=200 finish=tool_calls model=gpt-4.1-mini/gpt-4.1-mini latency=730ms retry=0
+  #1 openai openai.chat status=200 finish=tool_calls model=gpt-4.1-mini/gpt-4.1-mini latency=730ms retry=0 spec=not checked src=path tokens=120/18
     tool[0] get_weather args={"city":"Paris"}
 ```
+
+`finish=` is omitted when the call has no finish reason (HTTP errors print
+`finish=unknown` from some proxies; the client drops empty and `unknown`).
+`src=` and `tokens=<in>/<out>` are included when present. Hard `Expect`
+failures keep the summary on the assertion. Soft `Check` failures print each
+assertion without the summary, then one summary when the test ends.
 
 The package also keeps the lower-level client methods (`Calls`, `Wait`,
 `ListSessions`, `Config`, `Version`, `OTLP`, `Delete`) for custom assertions.
