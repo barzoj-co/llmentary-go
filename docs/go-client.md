@@ -241,7 +241,7 @@ lm.Expect(ctx).IsolatedFrom(other.SessionID(), llmentary.MinChars(8), llmentary.
    are ignored.
 
 System/developer prompts and tool definitions are never compared. An empty
-this session, or a never-created / empty other session, fails unless
+session on this side, or a never-created / empty other session, fails unless
 `AllowEmpty`. The same canned question in two parallel sessions therefore
 passes; replaying the other session's user turn as history fails and names
 the request `#seq (id)` plus `also introduced by session …`.
