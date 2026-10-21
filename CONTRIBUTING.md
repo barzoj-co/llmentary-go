@@ -58,6 +58,7 @@ actionlint
 ./scripts/check-pr-oidc.sh
 ./scripts/check-pr-oidc.sh --self-test
 ./scripts/e2e-gate.sh --self-test
+./scripts/coverage-gate.sh --self-test
 ./scripts/check-gitleaks-config.sh --self-test
 ./scripts/check-readme.sh
 ./scripts/check-mit-docs.sh
@@ -90,8 +91,29 @@ is false); `examples/go` and `e2e` are not tagged. The first release is forced t
 the v0 import path). That key only applies when no prior tag exists and can stay
 after `v0.1.0`.
 
-Coverage is **informational**. Codecov comments and status checks must not fail a
-PR (project and patch are `informational: true`).
+Coverage is enforced in the required `test` job, not by Codecov. The job merges
+`coverage-unit.out` with the integration profile (`examples/go` against the
+real pinned proxy), applies the ignore list from `codecov.yml`
+(`examples/**`, `e2e/**`), prints the total, and fails if it is below
+`.coverage-threshold`. That file is the ratchet: set it to the current
+measured total, floored, and raise it in the same PR as the tests that lift
+coverage. Do not lower it.
+
+Release-please PRs and release branches (`release-please--*`) ignore the
+ratchet file and require **90%** (the release bar). Regular `main` pushes
+keep the ratchet so `main` stays green while coverage is still climbing.
+
+Codecov uploads stay informational (`codecov.yml` project/patch
+`informational: true`) and are not the enforcement path. Local check after
+both profiles exist:
+
+```bash
+go test -covermode=atomic -coverprofile=coverage-unit.out ./...
+(cd examples/go && go test -covermode=atomic \
+  -coverpkg=github.com/barzoj-co/llmentary-go/... \
+  -coverprofile=../../coverage-integration.out ./...)
+./scripts/coverage-gate.sh
+```
 
 ## CI secrets and the e2e gate
 

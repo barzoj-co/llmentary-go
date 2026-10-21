@@ -50,6 +50,8 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
+    needs: [integration]
+    if: ${{ always() }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -68,6 +70,14 @@ jobs:
           files: ./coverage-unit.out
           flags: unit
           fail_ci_if_error: ${{ vars.CODECOV_REQUIRED == 'true' }}
+      - name: Download integration coverage
+        if: ${{ needs.integration.result == 'success' }}
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: coverage-integration
+          path: .
+      - name: Coverage gate
+        run: ./scripts/coverage-gate.sh
 
   integration:
     name: integration
@@ -123,6 +133,13 @@ jobs:
           files: ./coverage-integration.out
           flags: integration
           fail_ci_if_error: ${{ vars.CODECOV_REQUIRED == 'true' }}
+      - name: Upload integration coverage artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage-integration
+          path: coverage-integration.out
+          if-no-files-found: error
+          retention-days: 1
 
   e2e:
     name: e2e
