@@ -53,18 +53,34 @@ func (tr Trace) IgnoredFields() []IgnoredField {
 	return out
 }
 
+// SpecStatusLabel is the same token the proxy log uses: clean,
+// request_only, N violations, not checked, or skipped:<reason>.
+func (c Call) SpecStatusLabel() string {
+	return c.specSummary()
+}
+
 func (c Call) specSummary() string {
-	findings, checked := c.SpecViolations()
-	if !checked {
-		return "not checked"
+	v := c.Normalized.Validation
+	if v != nil && strings.TrimSpace(v.SkippedReason) != "" {
+		return "skipped:" + strings.TrimSpace(v.SkippedReason)
 	}
-	if len(findings) == 0 {
-		return "clean"
-	}
+	findings, _ := c.SpecViolations()
 	if len(findings) == 1 {
 		return "1 violation"
 	}
-	return fmt.Sprintf("%d violations", len(findings))
+	if len(findings) > 1 {
+		return fmt.Sprintf("%d violations", len(findings))
+	}
+	if v == nil {
+		return "not checked"
+	}
+	if v.RequestChecked && v.ResponseChecked {
+		return "clean"
+	}
+	if v.RequestChecked && !v.ResponseChecked {
+		return "request_only"
+	}
+	return "not checked"
 }
 
 // SpecOption configures NoSpecViolations / NoIgnoredFields.
