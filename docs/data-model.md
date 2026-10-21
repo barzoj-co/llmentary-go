@@ -79,7 +79,9 @@ is `llmentary.Session` (`lm := llmentary.New(t)`).
 | `raw_response` | base64 string | Raw response bytes used for parsing. Gzip upstream responses are decompressed in the recorded copy. |
 | `sse_events` | array | Parsed SSE events for streaming responses. |
 | `stream` | boolean | Whether the response was detected as SSE. |
-| `http_status` | number | Upstream HTTP status, or proxy error status. |
+| `http_status` | number | Upstream HTTP status, or proxy error status. `0` on a before-headers client abort (never 502). |
+| `client_aborted` | boolean | Top-level abort flag (DOG-27). Older proxies only set `normalized.client_aborted`; the Go client copies that alias. |
+| `abort_phase` | string, optional | `before_headers` or `after_headers` when aborted. Absent on older proxies (log-only). |
 | `retry_count` | number, optional | Integer parsed from `x-stainless-retry-count`. |
 | `retry_after` | string, optional | `retry-after-ms` or `retry-after` response header. |
 | `normalized` | object | Cross-provider view used by test assertions. |
@@ -180,7 +182,7 @@ from an Azure-style `/deployments/{deployment}/...` path segment.
 | `content_filter` | Provider content-filter data when parsed. |
 | `error` | Normalized provider/proxy error. |
 | `stream_truncated` | Stream ended without a terminal marker/event. |
-| `client_aborted` | Copying the upstream response to the client returned an error. |
+| `client_aborted` | Deprecated 0.x alias of the top-level `Call.client_aborted` field. |
 | `parser_warnings` | Non-fatal parser warnings. |
 | `raw` | Reserved raw normalized payload field; currently not populated by parsers. |
 | `validation` | Spec-check metadata (mode, profile, whether request/response were checked). Not a finding list. |

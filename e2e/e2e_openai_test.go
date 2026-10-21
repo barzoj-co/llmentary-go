@@ -771,6 +771,59 @@ func TestE2EExpectNoCallsAndEmptyIsolatedFrom(t *testing.T) {
 	}
 }
 
+func TestE2EClientAbortedBeforeHeaders(t *testing.T) {
+	apiKey := requireOpenAIKey(t)
+	model := e2eModel()
+	lm := newSession(t)
+	body := []byte(`{
+		"model":` + strconv.Quote(model) + `,
+		"messages":[{"role":"user","content":"Write a 600-word story about a barge meeting. Start immediately."}],
+		"stream":true,
+		"temperature":0
+	}`)
+	reqCtx, reqCancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer reqCancel()
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, lm.OpenAIBaseURL("openai")+"/chat/completions", bytes.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	req.Header.Set("Content-Type", "application/json")
+	key, value := lm.Header()
+	req.Header.Set(key, value)
+	resp, err := http.DefaultClient.Do(req)
+	if resp != nil {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
+	}
+	if err == nil && reqCtx.Err() == nil {
+		t.Fatal("expected the 50ms cancel to abort the streaming request")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	trace := lm.Wait(ctx)
+	if len(trace.Calls) != 1 {
+		t.Fatalf("want 1 aborted call, got %d:\n%s", len(trace.Calls), trace.Summary())
+	}
+	call := trace.Calls[0]
+	if !call.ClientAborted || !call.Aborted() {
+		t.Fatalf("ClientAborted=%v Aborted=%v normalized=%v\n%s", call.ClientAborted, call.Aborted(), call.Normalized.ClientAborted, trace.Summary())
+	}
+	if call.HTTPStatus == http.StatusBadGateway {
+		t.Fatalf("abort must not be recorded as 502:\n%s", trace.Summary())
+	}
+	if !strings.EqualFold(call.Normalized.FinishReason, "cancelled") {
+		t.Fatalf("finish_reason=%q want cancelled\n%s", call.Normalized.FinishReason, trace.Summary())
+	}
+	if call.AbortPhase != "" && call.AbortPhase != llmentary.AbortPhaseBeforeHeaders && call.AbortPhase != llmentary.AbortPhaseAfterHeaders {
+		t.Fatalf("AbortPhase=%q\n%s", call.AbortPhase, trace.Summary())
+	}
+	if !lm.Check(ctx).Aborted() {
+		t.Fatal("Aborted() should pass")
+	}
+}
+
 func TestE2EIsolatedFromPathSessions(t *testing.T) {
 	apiKey := requireOpenAIKey(t)
 	proxy := startE2EProxy(t)

@@ -190,6 +190,24 @@ Each `Call` exposes `SessionSource` (`header`, `baggage`, `path`, or
 src := call.SessionSource
 upstream := call.UpstreamURL()
 texts := call.UserTexts() // user-role turns only
+aborted := call.Aborted() // ClientAborted, or normalized.client_aborted
+phase := call.AbortPhase  // before_headers / after_headers when present
+```
+
+## Testing interruptions / barge-in
+
+`Call.ClientAborted` and `Call.AbortPhase` are the typed abort fields
+(DOG-27). `normalized.client_aborted` stays as a deprecated 0.x alias and
+is copied onto `ClientAborted` when the top-level key is absent. Phase
+values are `before_headers` and `after_headers` (DOG-28). A before-headers
+abort records `http_status` 0, never 502, with `finish_reason=cancelled`.
+
+```go
+trace := lm.Wait(ctx)
+if !trace.Calls[0].ClientAborted {
+    t.Fatal(trace.Summary())
+}
+lm.Expect(ctx).Aborted()
 ```
 
 A path prefix isolates the SDK client that uses it, not every conversation
