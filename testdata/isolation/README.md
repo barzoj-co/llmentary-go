@@ -2,7 +2,7 @@
 
 Normative fixtures for [`docs/isolation-spec.md`](../../docs/isolation-spec.md).
 Clients copy this directory and fail CI if the copy drifts from the pinned
-proxy release (`ProxyVersion`, currently `v0.4.0`), not proxy `main`.
+proxy version.
 
 Each file is one `X.isolated_from(Y)` check.
 
