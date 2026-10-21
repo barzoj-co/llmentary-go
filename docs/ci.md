@@ -16,7 +16,8 @@ Workflows live under `.github/workflows/`. The main pipeline is `ci.yml`:
   with `llmentary.DownloadRelease` (checksum-verified). The existing
   `secrets.LLMTESTLAB_REPO_TOKEN` is passed as `GH_TOKEN` (never in a URL or
   log) so the private release download does not use the default Actions
-  `GITHUB_TOKEN`. Runs the mock-upstream example, uploads
+  `GITHUB_TOKEN`. The same step drift-checks `testdata/isolation` against
+  that `ProxyVersion` tag, not proxy `main`. Runs the mock-upstream example, uploads
   `coverage-integration.out` tokenless, and publishes the same file as a
   workflow artifact for the `test` job gate
 - `e2e`: same event filter as `integration`; uses the `openai-e2e` environment
