@@ -220,6 +220,23 @@ func TestIsolatedFromFixtures(t *testing.T) {
 		}
 	})
 
+	t.Run("since_keeps_earlier_introduced_turns", func(t *testing.T) {
+		first := isolationCall("a", "call_a1", 1, "", `{"messages":[{"role":"user","content":"What is my biological age?"}]}`)
+		second := isolationCall("a", "call_a2", 2, "", `{
+			"messages":[
+				{"role":"user","content":"What is my biological age?"},
+				{"role":"assistant","content":"42"},
+				{"role":"user","content":"And what about my BMI?"}
+			]
+		}`)
+		other := isolationCall("b", "call_b", 1, "", `{"messages":[{"role":"user","content":"What is my biological age?"}]}`)
+		full := Trace{SessionID: "a", Calls: []Call{first, second}}
+		tb := &fakeTB{}
+		if !full.Query().Since(Mark{Seq: 1}).Check(tb).IsolatedFrom("b", WithOtherTrace(Trace{SessionID: "b", Calls: []Call{other}})) {
+			t.Fatalf("earlier own turn must still count as sent: %v", tb.messages)
+		}
+	})
+
 	t.Run("ignore_texts", func(t *testing.T) {
 		origin := isolationCall("a", "call_a", 1, "", `{"messages":[{"role":"user","content":"What is my biological age?"}]}`)
 		replay := isolationCall("b", "call_b", 1, "", `{
@@ -446,7 +463,7 @@ func isolationVectorTrace(sessionID string, calls []isolationVectorCall) (Trace,
 func fetchProxyIsolationVectors(ctx context.Context, version string) (map[string][]byte, error) {
 	token := firstNonEmpty(os.Getenv("LLMENTARY_GITHUB_TOKEN"), os.Getenv("GH_TOKEN"), os.Getenv("GITHUB_TOKEN"), os.Getenv("LLMTESTLAB_REPO_TOKEN"))
 	tag, _ := normalizeReleaseVersion(version)
-	for _, ref := range []string{tag, "main"} {
+	for _, ref := range []string{tag} {
 		files, missing, err := fetchGitHubIsolationDir(ctx, ref, token)
 		if err != nil {
 			return nil, err

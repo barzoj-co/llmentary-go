@@ -124,7 +124,11 @@ func (a *Assertions) IsolatedFrom(otherSessionID string, opts ...IsolatedFromOpt
 	}
 	ignore := isolationIgnoreSet(cfg.ignore)
 	minChars := cfg.minCharsOrDefault()
-	thisSent := introducedUserTurns(thisID, this, minChars, ignore)
+	sent := this
+	if len(a.sessionTrace.Calls) > 0 {
+		sent = a.sessionTrace.Calls
+	}
+	thisSent := introducedUserTurns(thisID, sent, minChars, ignore)
 	otherSent := introducedUserTurns(otherSessionID, other.Calls, minChars, ignore)
 	for _, call := range this {
 		for _, text := range call.UserTexts() {
