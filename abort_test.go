@@ -123,6 +123,22 @@ func TestCallAbortFieldsFromNewAndOldJSON(t *testing.T) {
 		}
 	})
 
+	t.Run("unknown_phase_falls_back_to_normalized", func(t *testing.T) {
+		var call Call
+		if err := json.Unmarshal([]byte(`{
+			"id":"call_bad",
+			"seq":1,
+			"client_aborted":true,
+			"abort_phase":"mid_stream",
+			"normalized":{"finish_reason":"cancelled","client_aborted":true,"raw":{"abort_phase":"before_headers"}}
+		}`), &call); err != nil {
+			t.Fatal(err)
+		}
+		if !call.Aborted() || call.AbortPhase != AbortPhaseBeforeHeaders {
+			t.Fatalf("unknown top-level phase should fall back: %+v", call)
+		}
+	})
+
 	t.Run("responses_completed_is_not_abort", func(t *testing.T) {
 		var call Call
 		if err := json.Unmarshal([]byte(`{

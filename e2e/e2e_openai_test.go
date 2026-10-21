@@ -877,7 +877,7 @@ func waitForSessionActivity(t *testing.T, lm *llmentary.Session, d time.Duration
 	deadline := time.Now().Add(d)
 	for time.Now().Before(deadline) {
 		for _, info := range lm.ListSessions(context.Background()) {
-			if info.ID == lm.SessionID() && (info.Active > 0 || info.Calls > 0) {
+			if info.ID == lm.SessionID() && info.Active > 0 {
 				return true
 			}
 		}

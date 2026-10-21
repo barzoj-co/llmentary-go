@@ -65,6 +65,9 @@ func (c *Call) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	*c = Call(raw)
+	if !knownAbortPhase(c.AbortPhase) {
+		c.AbortPhase = ""
+	}
 	if !c.ClientAborted && c.Normalized.ClientAborted {
 		c.ClientAborted = true
 	}
@@ -76,6 +79,15 @@ func (c *Call) UnmarshalJSON(data []byte) error {
 		c.AbortPhase = abortPhaseFromNormalized(c.Normalized)
 	}
 	return nil
+}
+
+func knownAbortPhase(phase string) bool {
+	switch phase {
+	case "", AbortPhaseBeforeHeaders, AbortPhaseAfterHeaders:
+		return true
+	default:
+		return false
+	}
 }
 
 func abortPhaseFromNormalized(n Normalized) string {
