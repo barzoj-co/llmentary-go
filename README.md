@@ -167,7 +167,7 @@ lm.Expect(ctx, llmentary.AllowEmpty()).IsolatedFrom(other.SessionID())
 `AllowEmpty` it passes. Client messages contain `known sessions:` at most
 once.
 
-## Testing interruptions / barge-in
+### Testing interruptions / barge-in
 
 A client cancel is a typed `Call` field. Older proxies only set
 `normalized.client_aborted`; the client copies that alias onto
