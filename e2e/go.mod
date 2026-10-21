@@ -2,6 +2,8 @@ module github.com/barzoj-co/llmentary-go/e2e
 
 go 1.22
 
+toolchain go1.26.10
+
 require (
 	github.com/barzoj-co/llmentary-go v0.0.0
 	github.com/openai/openai-go v1.12.0

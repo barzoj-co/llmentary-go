@@ -8,7 +8,7 @@ either.
 
 ## Requirements
 
-- Go 1.22 or newer (CI uses 1.26.x to match the proxy).
+- Go 1.22 or newer (CI uses 1.26.10 to match the proxy).
 - The proxy from [barzoj-co/llmentary](https://github.com/barzoj-co/llmentary)
   for integration and e2e tests.
 
