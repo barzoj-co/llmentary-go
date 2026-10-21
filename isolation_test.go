@@ -124,6 +124,18 @@ func TestIsolatedFromFixtures(t *testing.T) {
 		if !strings.Contains(joined, "session_id=weather") || !strings.Contains(joined, "want barge") {
 			t.Fatalf("foreign session_id message:\n%s", joined)
 		}
+
+		otherForeign := weather
+		otherForeign.SessionID = "barge"
+		tb2 := &fakeTB{}
+		a2 := bargeTrace.Query().Check(tb2)
+		if a2.IsolatedFrom("weather", WithOtherTrace(Trace{SessionID: "weather", Calls: []Call{otherForeign}})) {
+			t.Fatal("foreign session_id on the other trace should fail")
+		}
+		joined2 := strings.Join(tb2.messages, "\n")
+		if !strings.Contains(joined2, "session_id=barge") || !strings.Contains(joined2, "want weather") {
+			t.Fatalf("other-trace foreign session_id message:\n%s", joined2)
+		}
 	})
 
 	t.Run("empty_fails_unless_allow_empty", func(t *testing.T) {

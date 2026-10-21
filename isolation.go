@@ -62,6 +62,11 @@ func (a *Assertions) IsolatedFrom(otherSessionID string, opts ...IsolatedFromOpt
 			return a.fail("call %s has session_source=%s, want path", call.ID, src)
 		}
 	}
+	for _, call := range other.Calls {
+		if call.SessionID != "" && call.SessionID != otherSessionID {
+			return a.fail("call %s has session_id=%s, want %s", call.ID, call.SessionID, otherSessionID)
+		}
+	}
 	thisIDs := map[string]struct{}{}
 	for _, call := range this {
 		if call.ID == "" {
