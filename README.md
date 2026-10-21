@@ -145,8 +145,12 @@ Use `llmentary.AllowEmpty()` only when the test intends an empty match.
 1-based within the session. `Summary()` prints `#<seq> (<id>)`.
 
 Prove two path-prefix sessions stayed apart with
-`lm.Expect(ctx).IsolatedFrom(other.SessionID())` (user-role turns only;
-system prompts and tool names are not compared).
+`lm.Expect(ctx).IsolatedFrom(other.SessionID())`. Matching follows the
+[isolation spec](https://github.com/barzoj-co/llmentary/blob/main/docs/isolation-spec.md):
+`session_id` ownership, no shared call ids, and no **foreign** user turn
+(exact normalized match of a user message this session never sent). The
+same canned prompt in two sessions passes; history replay of the other
+session's turn fails. System prompts and tool names are not compared.
 
 See [docs/go-client.md](docs/go-client.md) for the full session, query, and
 assertion API.

@@ -4,12 +4,28 @@ package llmentary
 
 import (
 	"context"
+	"sort"
 	"strings"
+	"unicode/utf8"
+
+	"golang.org/x/text/cases"
 )
+
+const defaultIsolationMinChars = 8
 
 type isolatedFromConfig struct {
 	requirePath bool
 	other       *Trace
+	minChars    int
+	minCharsSet bool
+	ignore      []string
+}
+
+func (c isolatedFromConfig) minCharsOrDefault() int {
+	if c.minCharsSet {
+		return c.minChars
+	}
+	return defaultIsolationMinChars
 }
 
 // IsolatedFromOption configures IsolatedFrom.
@@ -30,9 +46,37 @@ func WithOtherTrace(tr Trace) IsolatedFromOption {
 	}
 }
 
+// MinChars sets the isolation text length floor (default 8). Zero keeps
+// short texts. Applied after trim / whitespace collapse / casefold.
+func MinChars(n int) IsolatedFromOption {
+	return func(c *isolatedFromConfig) {
+		c.minChars = n
+		c.minCharsSet = true
+	}
+}
+
+// IgnoreTexts skips these user messages after the same normalization as
+// IsolatedFrom matching.
+func IgnoreTexts(texts ...string) IsolatedFromOption {
+	return func(c *isolatedFromConfig) {
+		c.ignore = append(c.ignore, texts...)
+	}
+}
+
 // IsolatedFrom checks that this session did not leak into otherSessionID.
-// Failures name the broken rule: session_id mismatch, shared call id,
-// overlapping user-role text, or an empty session (unless AllowEmpty).
+//
+// Rules (docs/isolation-spec.md on the proxy):
+//  1. every call's session_id is this session (and the other trace matches);
+//  2. no call id appears in both sessions;
+//  3. no foreign user turn: a user-role message in this request that this
+//     session never introduced (last user turn of each call, excluding
+//     inbound history already seen) but the other session did. Comparison
+//     is exact after trim, whitespace collapse, and Unicode casefold —
+//     never substring.
+//
+// Empty this session, or a never-created / empty other session, fails
+// unless AllowEmpty. System/developer prompts and tool definitions are
+// never compared.
 func (a *Assertions) IsolatedFrom(otherSessionID string, opts ...IsolatedFromOption) bool {
 	a.t.Helper()
 	var cfg isolatedFromConfig
@@ -47,7 +91,7 @@ func (a *Assertions) IsolatedFrom(otherSessionID string, opts ...IsolatedFromOpt
 	if !ok {
 		return false
 	}
-	if !a.requireIsolationCalls(thisID, otherSessionID, this, other.Calls) {
+	if !a.requireIsolationCalls(thisID, this) {
 		return false
 	}
 	for _, call := range this {
@@ -82,38 +126,37 @@ func (a *Assertions) IsolatedFrom(otherSessionID string, opts ...IsolatedFromOpt
 			return a.fail("call id %s appears in sessions %s and %s", call.ID, thisID, otherSessionID)
 		}
 	}
-	type userHit struct {
-		session string
-		callID  string
-		text    string
+	if !a.allowEmpty && len(other.Calls) == 0 {
+		return a.fail("no calls recorded for session %s", otherSessionID)
 	}
-	var thisUsers, otherUsers []userHit
+	ignore := isolationIgnoreSet(cfg.ignore)
+	minChars := cfg.minCharsOrDefault()
+	sent := this
+	if len(a.sessionTrace.Calls) > 0 {
+		sent = make([]Call, 0, len(a.sessionTrace.Calls))
+		for _, call := range a.sessionTrace.Calls {
+			if call.SessionID == "" || call.SessionID == thisID {
+				sent = append(sent, call)
+			}
+		}
+	}
+	thisSent := introducedUserTurns(thisID, sent, minChars, ignore)
+	otherSent := introducedUserTurns(otherSessionID, other.Calls, minChars, ignore)
 	for _, call := range this {
 		for _, text := range call.UserTexts() {
-			if strings.TrimSpace(text) == "" {
+			key := normalizeIsolationText(text)
+			if !keepIsolationText(key, minChars, ignore) {
 				continue
 			}
-			thisUsers = append(thisUsers, userHit{session: thisID, callID: call.ID, text: text})
-		}
-	}
-	for _, call := range other.Calls {
-		for _, text := range call.UserTexts() {
-			if strings.TrimSpace(text) == "" {
+			if _, own := thisSent[key]; own {
 				continue
 			}
-			sid := otherSessionID
-			if call.SessionID != "" {
-				sid = call.SessionID
+			hit, foreign := otherSent[key]
+			if !foreign {
+				continue
 			}
-			otherUsers = append(otherUsers, userHit{session: sid, callID: call.ID, text: text})
-		}
-	}
-	for _, left := range thisUsers {
-		for _, right := range otherUsers {
-			if userTextAppearsIn(left.text, right.text) {
-				return a.fail("user text %q from session %s call %s appears in session %s call %s",
-					left.text, left.session, left.callID, right.session, right.callID)
-			}
+			return a.fail("user text '%s' from session %s #%d (%s) appears in session %s #%d (%s)",
+				text, hit.session, hit.seq, hit.callID, thisID, call.Seq, call.ID)
 		}
 	}
 	return true
@@ -164,7 +207,7 @@ func (a *Assertions) otherIsolationTrace(otherSessionID string, supplied *Trace)
 	return Trace{SessionID: otherSessionID, Calls: calls}, true
 }
 
-func (a *Assertions) requireIsolationCalls(thisID, otherID string, this, other []Call) bool {
+func (a *Assertions) requireIsolationCalls(thisID string, this []Call) bool {
 	a.t.Helper()
 	if a.allowEmpty {
 		return true
@@ -172,15 +215,81 @@ func (a *Assertions) requireIsolationCalls(thisID, otherID string, this, other [
 	if len(this) == 0 {
 		return a.fail("no calls recorded for session %s", thisID)
 	}
-	if len(other) == 0 {
-		return a.fail("no calls recorded for session %s", otherID)
+	return true
+}
+
+type isolationTurn struct {
+	session string
+	callID  string
+	seq     int
+	text    string
+}
+
+func introducedUserTurns(sessionID string, calls []Call, minChars int, ignore map[string]struct{}) map[string]isolationTurn {
+	ordered := append([]Call(nil), calls...)
+	sort.SliceStable(ordered, func(i, j int) bool { return ordered[i].Seq < ordered[j].Seq })
+	seenHistory := map[string]struct{}{}
+	out := map[string]isolationTurn{}
+	for _, call := range ordered {
+		texts := call.UserTexts()
+		if len(texts) == 0 {
+			continue
+		}
+		for _, text := range texts[:len(texts)-1] {
+			if key := normalizeIsolationText(text); key != "" {
+				seenHistory[key] = struct{}{}
+			}
+		}
+		text := texts[len(texts)-1]
+		key := normalizeIsolationText(text)
+		if !keepIsolationText(key, minChars, ignore) {
+			continue
+		}
+		if _, history := seenHistory[key]; history {
+			continue
+		}
+		if _, exists := out[key]; exists {
+			continue
+		}
+		sid := sessionID
+		if call.SessionID != "" {
+			sid = call.SessionID
+		}
+		out[key] = isolationTurn{session: sid, callID: call.ID, seq: call.Seq, text: text}
+	}
+	return out
+}
+
+func isolationIgnoreSet(texts []string) map[string]struct{} {
+	if len(texts) == 0 {
+		return nil
+	}
+	out := make(map[string]struct{}, len(texts))
+	for _, text := range texts {
+		key := normalizeIsolationText(text)
+		if key != "" {
+			out[key] = struct{}{}
+		}
+	}
+	return out
+}
+
+func keepIsolationText(key string, minChars int, ignore map[string]struct{}) bool {
+	if key == "" {
+		return false
+	}
+	if _, skip := ignore[key]; skip {
+		return false
+	}
+	if minChars > 0 && utf8.RuneCountInString(key) < minChars {
+		return false
 	}
 	return true
 }
 
-func userTextAppearsIn(a, b string) bool {
-	if a == "" || b == "" {
-		return false
-	}
-	return a == b || strings.Contains(b, a) || strings.Contains(a, b)
+// normalizeIsolationText trims, collapses whitespace, then Unicode-casefolds
+// with cases.Fold (ß→ss, Greek Σ/ς, and the rest of the Unicode fold).
+func normalizeIsolationText(s string) string {
+	s = strings.Join(strings.Fields(strings.TrimSpace(s)), " ")
+	return cases.Fold().String(s)
 }
