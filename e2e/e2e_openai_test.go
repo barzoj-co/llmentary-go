@@ -774,7 +774,8 @@ func TestE2EExpectNoCallsAndEmptyIsolatedFrom(t *testing.T) {
 func TestE2EClientAbortedBeforeHeaders(t *testing.T) {
 	apiKey := requireOpenAIKey(t)
 	model := e2eModel()
-	lm := newSession(t)
+	proxy := startE2EProxy(t)
+	lm := sessionOnProxy(t, proxy)
 	body := []byte(`{
 		"model":` + strconv.Quote(model) + `,
 		"messages":[{"role":"user","content":"Write a 600-word story about a barge meeting. Start immediately."}],
@@ -801,7 +802,7 @@ func TestE2EClientAbortedBeforeHeaders(t *testing.T) {
 		}
 		done <- err
 	}()
-	if !waitForSessionActivity(t, lm, 10*time.Second) {
+	if !waitForSessionActivity(t, proxy.ControlURL, lm.SessionID(), 10*time.Second) {
 		reqCancel()
 		t.Fatal("proxy never saw the request before cancel")
 	}
@@ -940,18 +941,33 @@ func TestE2EIsolatedFromSamePromptAndReplay(t *testing.T) {
 	}
 }
 
-func waitForSessionActivity(t *testing.T, lm *llmentary.Session, d time.Duration) bool {
+func waitForSessionActivity(t *testing.T, controlURL, sessionID string, d time.Duration) bool {
 	t.Helper()
-	deadline := time.Now().Add(d)
-	for time.Now().Before(deadline) {
-		for _, info := range lm.ListSessions(context.Background()) {
-			if info.ID == lm.SessionID() && info.Active > 0 {
-				return true
+	client, err := llmentary.NewClient(controlURL)
+	if err != nil {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), d)
+	defer cancel()
+	for {
+		list, err := client.ListSessions(ctx)
+		if err != nil {
+			if ctx.Err() != nil {
+				return false
+			}
+		} else {
+			for _, info := range list {
+				if info.ID == sessionID && info.Active > 0 {
+					return true
+				}
 			}
 		}
-		time.Sleep(10 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			return false
+		case <-time.After(10 * time.Millisecond):
+		}
 	}
-	return false
 }
 
 func startE2EProxy(t *testing.T) *llmentary.Proxy {
