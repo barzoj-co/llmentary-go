@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/barzoj-co/llmentary-go/compare/v0.4.0...v0.4.1) (2026-10-21)
+
+
+### Bug Fixes
+
+* align IsolatedFrom with empty-other and later-call spec ([#29](https://github.com/barzoj-co/llmentary-go/issues/29)) ([7d40792](https://github.com/barzoj-co/llmentary-go/commit/7d4079281b7fa78b338040344d07137e3f1f74f2))
+
 ## [Unreleased]
 
 ### Bug Fixes
