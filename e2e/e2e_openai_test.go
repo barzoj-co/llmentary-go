@@ -814,24 +814,34 @@ func TestE2ESummaryRequestOnlyOn401AndAbort(t *testing.T) {
 		"stream":true,
 		"temperature":0
 	}`)
-	reqCtx, reqCancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	apiKey := requireOpenAIKey(t)
+	reqCtx, reqCancel := context.WithCancel(context.Background())
 	defer reqCancel()
-	areq, err := http.NewRequestWithContext(reqCtx, http.MethodPost, lmAbort.OpenAIBaseURL("openai")+"/chat/completions", bytes.NewReader(abortBody))
-	if err != nil {
-		t.Fatal(err)
+	done := make(chan error, 1)
+	go func() {
+		areq, err := http.NewRequestWithContext(reqCtx, http.MethodPost, lmAbort.OpenAIBaseURL("openai")+"/chat/completions", bytes.NewReader(abortBody))
+		if err != nil {
+			done <- err
+			return
+		}
+		areq.Header.Set("Authorization", "Bearer "+apiKey)
+		areq.Header.Set("Content-Type", "application/json")
+		akey, avalue := lmAbort.Header()
+		areq.Header.Set(akey, avalue)
+		aresp, err := http.DefaultClient.Do(areq)
+		if aresp != nil {
+			_, _ = io.Copy(io.Discard, aresp.Body)
+			_ = aresp.Body.Close()
+		}
+		done <- err
+	}()
+	if !waitForSessionActivity(t, lmAbort, 10*time.Second) {
+		reqCancel()
+		t.Fatal("proxy never saw the abort request")
 	}
-	areq.Header.Set("Authorization", "Bearer "+requireOpenAIKey(t))
-	areq.Header.Set("Content-Type", "application/json")
-	akey, avalue := lmAbort.Header()
-	areq.Header.Set(akey, avalue)
-	aresp, aerr := http.DefaultClient.Do(areq)
-	if aresp != nil {
-		_, _ = io.Copy(io.Discard, aresp.Body)
-		_ = aresp.Body.Close()
-	}
-	if aerr == nil && reqCtx.Err() == nil {
-		t.Fatal("expected the 50ms cancel to abort the streaming request")
-	}
+	time.Sleep(50 * time.Millisecond)
+	reqCancel()
+	<-done
 	traceAbort := lmAbort.Wait(ctx)
 	if len(traceAbort.Calls) != 1 {
 		t.Fatalf("abort recorded %d calls:\n%s", len(traceAbort.Calls), traceAbort.Summary())
@@ -950,6 +960,20 @@ func TestE2EIsolatedFromSamePromptAndReplay(t *testing.T) {
 			t.Fatalf("replay IsolatedFrom missing %q:\n%s", want, joined)
 		}
 	}
+}
+
+func waitForSessionActivity(t *testing.T, lm *llmentary.Session, d time.Duration) bool {
+	t.Helper()
+	deadline := time.Now().Add(d)
+	for time.Now().Before(deadline) {
+		for _, info := range lm.ListSessions(context.Background()) {
+			if info.ID == lm.SessionID() && (info.Active > 0 || info.Calls > 0) {
+				return true
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	return false
 }
 
 func startE2EProxy(t *testing.T) *llmentary.Proxy {
