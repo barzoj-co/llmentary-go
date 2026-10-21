@@ -17,7 +17,8 @@ const (
 )
 
 // SessionNotFoundError is returned when GET /sessions/{id} is 404
-// session_not_found, or when Expect/Check runs on a session that never
+// session_not_found, when wait on a never-created session returns 404
+// (min_calls=0), or when Expect/Check runs on a session that never
 // recorded a call. The message always names the requested id and, when
 // known, the ids from GET /sessions.
 type SessionNotFoundError struct {
@@ -50,6 +51,12 @@ func (e *SessionNotFoundError) Unwrap() error {
 func IsSessionNotFound(err error) bool {
 	var snf *SessionNotFoundError
 	return errors.As(err, &snf)
+}
+
+// IsWaitTimeout reports whether err is or wraps WaitTimeoutError.
+func IsWaitTimeout(err error) bool {
+	var wt *WaitTimeoutError
+	return errors.As(err, &wt)
 }
 
 // WaitTimeoutError is a 504 wait_timeout from /sessions/{id}/wait.

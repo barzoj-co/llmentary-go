@@ -167,9 +167,62 @@ func (c Call) PromptText() string {
 	return c.Normalized.SystemPrompt
 }
 
+// UserTexts is the user-role turn text from RawRequest: Chat messages
+// with role=user, or Responses input items with role=user (a string
+// input counts as one user turn). System/developer prompts, instructions,
+// and tool definitions are omitted.
+func (c Call) UserTexts() []string {
+	return userTextsFromRawRequest(c.RawRequest)
+}
+
 // ResponseText is normalized.output_text.
 func (c Call) ResponseText() string {
 	return c.Normalized.OutputText
+}
+
+func userTextsFromRawRequest(raw []byte) []string {
+	if len(raw) == 0 {
+		return nil
+	}
+	var body map[string]any
+	if json.Unmarshal(raw, &body) != nil {
+		return nil
+	}
+	var out []string
+	collectUserRoleTexts(&out, body["messages"])
+	switch input := body["input"].(type) {
+	case string:
+		if strings.TrimSpace(input) != "" {
+			out = append(out, input)
+		}
+	default:
+		collectUserRoleTexts(&out, input)
+	}
+	return out
+}
+
+func collectUserRoleTexts(out *[]string, value any) {
+	switch typed := value.(type) {
+	case []any:
+		for _, item := range typed {
+			collectUserRoleTexts(out, item)
+		}
+	case map[string]any:
+		role, _ := typed["role"].(string)
+		if role != "user" {
+			return
+		}
+		var parts []string
+		appendContent(&parts, typed["content"])
+		if len(parts) == 0 {
+			if text, ok := typed["text"].(string); ok && text != "" {
+				parts = append(parts, text)
+			}
+		}
+		if s := strings.TrimSpace(strings.Join(parts, "\n")); s != "" {
+			*out = append(*out, s)
+		}
+	}
 }
 
 func promptFromRawRequest(raw []byte) string {

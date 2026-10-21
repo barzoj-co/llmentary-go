@@ -333,6 +333,7 @@ func TestTraceSummaryOmitsUnknownFinishAndCallKeys(t *testing.T) {
 	in, out := 12, 3
 	trace := Trace{SessionID: "graph", Calls: []Call{
 		{
+			ID:            "call_1",
 			Seq:           1,
 			Provider:      "openai",
 			APIFamily:     "openai.chat",
@@ -345,6 +346,7 @@ func TestTraceSummaryOmitsUnknownFinishAndCallKeys(t *testing.T) {
 			},
 		},
 		{
+			ID:            "call_2",
 			Seq:           2,
 			Provider:      "openai",
 			APIFamily:     "openai.chat",
@@ -357,6 +359,7 @@ func TestTraceSummaryOmitsUnknownFinishAndCallKeys(t *testing.T) {
 			},
 		},
 		{
+			ID:            "call_3",
 			Seq:           3,
 			Provider:      "openai",
 			APIFamily:     "openai.chat",
@@ -365,6 +368,7 @@ func TestTraceSummaryOmitsUnknownFinishAndCallKeys(t *testing.T) {
 			Normalized:    Normalized{FinishReason: "stop", OutputText: "done"},
 		},
 		{
+			ID:            "call_4",
 			Seq:           4,
 			Provider:      "openai",
 			APIFamily:     "openai.chat",

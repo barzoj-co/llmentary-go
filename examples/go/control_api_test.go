@@ -111,11 +111,14 @@ func TestListSessionsMinCallsAndNotFound(t *testing.T) {
 		llmentary.WithWait(50*time.Millisecond, 2*time.Second),
 	)
 	_, err = client.Wait(ctx, empty.SessionID(), 50*time.Millisecond, 2*time.Second, llmentary.MinCalls(1))
-	if !llmentary.IsSessionNotFound(err) {
-		t.Fatalf("zero-call wait err=%v", err)
+	if llmentary.IsSessionNotFound(err) {
+		t.Fatalf("min_calls>=1 on a never-created session must be a timeout, got SessionNotFound: %v", err)
 	}
-	if !strings.Contains(err.Error(), empty.SessionID()) || !strings.Contains(err.Error(), lm.SessionID()) {
-		t.Fatalf("zero-calls failure %q should name empty session and known ids", err)
+	if !llmentary.IsWaitTimeout(err) {
+		t.Fatalf("zero-call wait min_calls=1 err=%v", err)
+	}
+	if !strings.Contains(err.Error(), empty.SessionID()) || !strings.Contains(err.Error(), "wait timed out") {
+		t.Fatalf("timeout %q should name the empty session", err)
 	}
 }
 

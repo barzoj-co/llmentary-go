@@ -154,7 +154,7 @@ func TestApplyWaitEnvInvalidNamesVariable(t *testing.T) {
 	}
 }
 
-func TestWaitTimeoutZeroCallsIsSessionNotFound(t *testing.T) {
+func TestWaitTimeoutZeroCallsIsWaitTimeout(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/sessions/empty/wait":
@@ -180,10 +180,49 @@ func TestWaitTimeoutZeroCallsIsSessionNotFound(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err = c.Wait(context.Background(), "empty", DefaultWaitQuiet, time.Second, MinCalls(1))
+	if IsSessionNotFound(err) {
+		t.Fatalf("504 wait_timeout must stay a timeout, got SessionNotFound: %v", err)
+	}
+	if !IsWaitTimeout(err) {
+		t.Fatalf("err=%v", err)
+	}
+	if !strings.Contains(err.Error(), "wait timed out") || !strings.Contains(err.Error(), "empty") {
+		t.Fatalf("error %q should be a timeout that names the session", err)
+	}
+}
+
+func TestWait404IsSessionNotFound(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/sessions/ghost/wait":
+			if r.URL.Query().Get("min_calls") != "" {
+				t.Errorf("min_calls=0 must omit min_calls, query=%q", r.URL.RawQuery)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"error":{"type":"session_not_found","message":"no calls recorded for session \"ghost\""},"id":"ghost"}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/sessions":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"sessions": []SessionInfo{{ID: "already-there"}},
+			})
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	c, err := NewClient(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = c.Wait(context.Background(), "ghost", 200*time.Millisecond, 3*time.Second)
+	if IsWaitTimeout(err) {
+		t.Fatalf("wait 404 must not be a timeout: %v", err)
+	}
 	if !IsSessionNotFound(err) {
 		t.Fatalf("err=%v", err)
 	}
-	if !strings.Contains(err.Error(), "no calls recorded for session empty") || !strings.Contains(err.Error(), "already-there") {
+	if !strings.Contains(err.Error(), "no calls recorded for session ghost") || !strings.Contains(err.Error(), "already-there") {
 		t.Fatalf("error %q should name the session and known ids", err)
 	}
 }
