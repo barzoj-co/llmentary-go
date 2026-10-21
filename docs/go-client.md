@@ -194,18 +194,30 @@ texts := call.UserTexts() // user-role turns only
 
 A path prefix isolates the SDK client that uses it, not every conversation
 in one process. One env-configured client is one session. Prove two
-sessions stayed apart with `IsolatedFrom`, not substring search over raw
-request JSON (system prompts and tool names will false-positive). See
-[black-box isolation](https://github.com/barzoj-co/llmentary/blob/main/docs/black-box.md).
+sessions stayed apart with `IsolatedFrom`. The rule is defined once in
+the [isolation spec](https://github.com/barzoj-co/llmentary/blob/main/docs/isolation-spec.md)
+(and linked from [black-box isolation](https://github.com/barzoj-co/llmentary/blob/main/docs/black-box.md)).
 
 ```go
 lm.Expect(ctx).IsolatedFrom(other.SessionID())
 lm.Expect(ctx).IsolatedFrom(other.SessionID(), llmentary.RequirePathSource())
+lm.Expect(ctx).IsolatedFrom(other.SessionID(), llmentary.MinChars(8), llmentary.IgnoreTexts("ok"))
 ```
 
-`IsolatedFrom` checks `session_id` on every call, that no call id appears
-in both sessions, and that user-role texts do not overlap. An empty
-session fails unless `AllowEmpty`.
+`IsolatedFrom` checks:
+
+1. every call's `session_id` is this session;
+2. no call id appears in both sessions;
+3. no **foreign** user turn: a user-role message in this request that this
+   session never sent (the last user message of each of its calls) but the
+   other session did. Comparison is exact after trim, whitespace collapse,
+   and casefold — never substring. Equal texts both sessions sent themselves
+   are not a leak. Texts shorter than `min_chars` (default 8) are ignored.
+
+System/developer prompts and tool definitions are never compared. An empty
+session fails unless `AllowEmpty`. The same canned question in two parallel
+sessions therefore passes; replaying the other session's user turn as
+history fails and names both `#seq (id)` values.
 
 ## Tool assertions
 

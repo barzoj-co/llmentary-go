@@ -1,0 +1,20 @@
+{
+  "name": "empty_with_allow_empty",
+  "expect": "pass",
+  "this_session": "empty",
+  "other_session": "weather",
+  "allow_empty": true,
+  "this": [],
+  "other": [
+    {
+      "id": "call_3",
+      "seq": 1,
+      "session_id": "weather",
+      "request": {
+        "messages": [
+          {"role": "user", "content": "Weather in Amsterdam?"}
+        ]
+      }
+    }
+  ]
+}

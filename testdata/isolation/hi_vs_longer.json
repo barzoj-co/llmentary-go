@@ -1,0 +1,30 @@
+{
+  "name": "hi_vs_longer",
+  "expect": "pass",
+  "this_session": "a",
+  "other_session": "b",
+  "this": [
+    {
+      "id": "call_hi",
+      "seq": 1,
+      "session_id": "a",
+      "request": {
+        "messages": [
+          {"role": "user", "content": "Hi"}
+        ]
+      }
+    }
+  ],
+  "other": [
+    {
+      "id": "call_long",
+      "seq": 1,
+      "session_id": "b",
+      "request": {
+        "messages": [
+          {"role": "user", "content": "Hi, what is my biological age? This text is long."}
+        ]
+      }
+    }
+  ]
+}

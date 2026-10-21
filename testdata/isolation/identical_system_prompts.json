@@ -1,0 +1,36 @@
+{
+  "name": "identical_system_prompts",
+  "expect": "pass",
+  "this_session": "barge",
+  "other_session": "weather",
+  "this": [
+    {
+      "id": "call_1",
+      "seq": 1,
+      "session_id": "barge",
+      "session_source": "path",
+      "request": {
+        "messages": [
+          {"role": "system", "content": "Never mention Amsterdam weather or get_current_weather."},
+          {"role": "user", "content": "Start the barge meeting"}
+        ],
+        "tools": [{"function": {"name": "schedule_barge"}}]
+      }
+    }
+  ],
+  "other": [
+    {
+      "id": "call_3",
+      "seq": 1,
+      "session_id": "weather",
+      "session_source": "path",
+      "request": {
+        "messages": [
+          {"role": "system", "content": "You are a weather bot. Use get_current_weather."},
+          {"role": "user", "content": "Weather in Amsterdam?"}
+        ],
+        "tools": [{"function": {"name": "get_current_weather"}}]
+      }
+    }
+  ]
+}

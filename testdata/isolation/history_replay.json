@@ -1,0 +1,42 @@
+{
+  "name": "history_replay",
+  "expect": "fail",
+  "this_session": "b",
+  "other_session": "a",
+  "message_contains": [
+    "user text",
+    "What is my biological age?",
+    "a",
+    "b",
+    "#1 (call_a)",
+    "#1 (call_b)"
+  ],
+  "this": [
+    {
+      "id": "call_b",
+      "seq": 1,
+      "session_id": "b",
+      "request": {
+        "messages": [
+          {"role": "system", "content": "You are a health assistant."},
+          {"role": "user", "content": "What is my biological age?"},
+          {"role": "assistant", "content": "42"},
+          {"role": "user", "content": "And what about my BMI?"}
+        ]
+      }
+    }
+  ],
+  "other": [
+    {
+      "id": "call_a",
+      "seq": 1,
+      "session_id": "a",
+      "request": {
+        "messages": [
+          {"role": "system", "content": "You are a health assistant."},
+          {"role": "user", "content": "What is my biological age?"}
+        ]
+      }
+    }
+  ]
+}

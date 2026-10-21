@@ -810,6 +810,74 @@ func TestE2EIsolatedFromPathSessions(t *testing.T) {
 	}
 }
 
+func TestE2EIsolatedFromSamePromptAndReplay(t *testing.T) {
+	apiKey := requireOpenAIKey(t)
+	proxy := startE2EProxy(t)
+	lmA := sessionOnProxy(t, proxy)
+	lmB := sessionOnProxy(t, proxy)
+	lmC := sessionOnProxy(t, proxy)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	prompt := "What is the capital of France? Reply with only the city name."
+	chatPath := func(lm *llmentary.Session, messages []openai.ChatCompletionMessageParamUnion) {
+		t.Helper()
+		oa := openai.NewClient(
+			option.WithAPIKey(apiKey),
+			option.WithBaseURL(lm.PathBaseURL("openai")),
+			option.WithMaxRetries(0),
+		)
+		if _, err := oa.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
+			Model:       e2eModel(),
+			Temperature: param.NewOpt(0.0),
+			Messages:    messages,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	chatPath(lmA, []openai.ChatCompletionMessageParamUnion{
+		openai.UserMessage(prompt),
+	})
+	chatPath(lmB, []openai.ChatCompletionMessageParamUnion{
+		openai.UserMessage(prompt),
+	})
+
+	if !lmA.Expect(ctx).IsolatedFrom(lmB.SessionID()) {
+		t.Fatal("same canned prompt: A should be isolated from B")
+	}
+	if !lmB.Expect(ctx).IsolatedFrom(lmA.SessionID()) {
+		t.Fatal("same canned prompt: B should be isolated from A")
+	}
+
+	chatPath(lmC, []openai.ChatCompletionMessageParamUnion{
+		openai.UserMessage(prompt),
+		openai.AssistantMessage("Paris"),
+		openai.UserMessage("Reply with only the word replay."),
+	})
+
+	rec := &e2eRecorder{}
+	traceA := lmA.Wait(ctx)
+	traceC := lmC.Wait(ctx)
+	if traceC.Query().Check(rec).IsolatedFrom(lmA.SessionID(), llmentary.WithOtherTrace(traceA)) {
+		t.Fatal("history replay of A's user turn should fail IsolatedFrom")
+	}
+	rec.flush()
+	joined := strings.Join(rec.messages, "\n")
+	for _, want := range []string{
+		"user text",
+		prompt,
+		"#1 (" + traceA.Calls[0].ID + ")",
+		"#1 (" + traceC.Calls[0].ID + ")",
+		lmA.SessionID(),
+		lmC.SessionID(),
+	} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("replay IsolatedFrom missing %q:\n%s", want, joined)
+		}
+	}
+}
+
 func startE2EProxy(t *testing.T) *llmentary.Proxy {
 	t.Helper()
 	if _, err := llmentary.ResolveBinary(); err != nil {
