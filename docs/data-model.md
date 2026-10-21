@@ -16,7 +16,7 @@ is `llmentary.Session` (`lm := llmentary.New(t)`).
 
 | Field | Type | Meaning |
 |---|---|---|
-| `id` | string | Session id from `X-Test-Session`, baggage, or `default`. |
+| `id` | string | Session id from `X-Test-Session`, baggage, `/s/{session}` path, or `default`. |
 | `calls` | array of `Call` | Calls recorded for the session in sequence order. |
 
 ## Call

@@ -60,6 +60,7 @@ func TestSpecViolationsAgainstProxy(t *testing.T) {
 
 	tb := &recordTB{}
 	trace.Query().Check(tb).NoSpecViolations()
+	tb.flush()
 	if !tb.failed {
 		t.Fatal("NoSpecViolations should fail on foo")
 	}
@@ -75,9 +76,21 @@ type recordTB struct {
 	testing.TB
 	messages []string
 	failed   bool
+	cleanups []func()
 }
 
 func (f *recordTB) Helper() {}
+
+func (f *recordTB) Cleanup(fn func()) {
+	f.cleanups = append(f.cleanups, fn)
+}
+
+func (f *recordTB) flush() {
+	for i := len(f.cleanups) - 1; i >= 0; i-- {
+		f.cleanups[i]()
+	}
+	f.cleanups = nil
+}
 
 func (f *recordTB) Error(args ...any) {
 	f.failed = true
