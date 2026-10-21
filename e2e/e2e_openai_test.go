@@ -781,24 +781,33 @@ func TestE2EClientAbortedBeforeHeaders(t *testing.T) {
 		"stream":true,
 		"temperature":0
 	}`)
-	reqCtx, reqCancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	reqCtx, reqCancel := context.WithCancel(context.Background())
 	defer reqCancel()
-	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, lm.OpenAIBaseURL("openai")+"/chat/completions", bytes.NewReader(body))
-	if err != nil {
-		t.Fatal(err)
+	done := make(chan error, 1)
+	go func() {
+		req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, lm.OpenAIBaseURL("openai")+"/chat/completions", bytes.NewReader(body))
+		if err != nil {
+			done <- err
+			return
+		}
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+		req.Header.Set("Content-Type", "application/json")
+		key, value := lm.Header()
+		req.Header.Set(key, value)
+		resp, err := http.DefaultClient.Do(req)
+		if resp != nil {
+			_, _ = io.Copy(io.Discard, resp.Body)
+			_ = resp.Body.Close()
+		}
+		done <- err
+	}()
+	if !waitForSessionActivity(t, lm, 10*time.Second) {
+		reqCancel()
+		t.Fatal("proxy never saw the request before cancel")
 	}
-	req.Header.Set("Authorization", "Bearer "+apiKey)
-	req.Header.Set("Content-Type", "application/json")
-	key, value := lm.Header()
-	req.Header.Set(key, value)
-	resp, err := http.DefaultClient.Do(req)
-	if resp != nil {
-		_, _ = io.Copy(io.Discard, resp.Body)
-		_ = resp.Body.Close()
-	}
-	if err == nil && reqCtx.Err() == nil {
-		t.Fatal("expected the 50ms cancel to abort the streaming request")
-	}
+	time.Sleep(50 * time.Millisecond)
+	reqCancel()
+	<-done
 
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
@@ -861,6 +870,20 @@ func TestE2EIsolatedFromPathSessions(t *testing.T) {
 	if !lmB.Expect(ctx).IsolatedFrom(lmA.SessionID(), llmentary.RequirePathSource()) {
 		t.Fatal("session B should be isolated from A")
 	}
+}
+
+func waitForSessionActivity(t *testing.T, lm *llmentary.Session, d time.Duration) bool {
+	t.Helper()
+	deadline := time.Now().Add(d)
+	for time.Now().Before(deadline) {
+		for _, info := range lm.ListSessions(context.Background()) {
+			if info.ID == lm.SessionID() && (info.Active > 0 || info.Calls > 0) {
+				return true
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	return false
 }
 
 func startE2EProxy(t *testing.T) *llmentary.Proxy {
