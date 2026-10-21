@@ -126,9 +126,6 @@ func TestStartForTestHealthyFake(t *testing.T) {
 	if !strings.Contains(gotOut, "fake-proxy-start") || !strings.Contains(gotErr, "fake-proxy-ready") {
 		t.Fatalf("Output stdout=%q stderr=%q", gotOut, gotErr)
 	}
-	if gotOut != stdout.String() || gotErr != stderr.String() {
-		t.Fatalf("Output mismatch stdout=%q stderr=%q", gotOut, gotErr)
-	}
 	cwd, err := os.ReadFile(marker)
 	if err != nil {
 		t.Fatal(err)
@@ -138,6 +135,10 @@ func TestStartForTestHealthyFake(t *testing.T) {
 	}
 	if err := p.Stop(); err != nil {
 		t.Fatal(err)
+	}
+	gotOut, gotErr = p.Output()
+	if gotOut != stdout.String() || gotErr != stderr.String() {
+		t.Fatalf("Output mismatch stdout=%q stderr=%q", gotOut, gotErr)
 	}
 	if err := p.Stop(); err != nil {
 		t.Fatalf("second Stop: %v", err)
