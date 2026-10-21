@@ -834,6 +834,17 @@ func (a *Assertions) NoErrors() bool {
 	return true
 }
 
+// Aborted passes when at least one matched call was a client abort.
+func (a *Assertions) Aborted() bool {
+	a.t.Helper()
+	for _, call := range a.trace.Calls {
+		if call.Aborted() {
+			return true
+		}
+	}
+	return a.fail("expected a client-aborted call")
+}
+
 func (a *Assertions) HasError() bool {
 	a.t.Helper()
 	for _, call := range a.trace.Calls {

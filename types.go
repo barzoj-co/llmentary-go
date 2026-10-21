@@ -43,7 +43,79 @@ type Call struct {
 	HTTPStatus    int               `json:"http_status"`
 	RetryCount    *int              `json:"retry_count,omitempty"`
 	RetryAfter    string            `json:"retry_after,omitempty"`
-	Normalized    Normalized        `json:"normalized"`
+	// ClientAborted is a top-level Call field (DOG-27). Older proxies
+	// only set normalized.client_aborted; UnmarshalJSON copies that alias.
+	ClientAborted bool `json:"client_aborted,omitempty"`
+	// AbortPhase is before_headers or after_headers when ClientAborted.
+	// Omitted when the call is not aborted. A client close after [DONE]
+	// or a terminal Responses event is not an abort.
+	AbortPhase string     `json:"abort_phase,omitempty"`
+	Normalized Normalized `json:"normalized"`
+}
+
+const (
+	AbortPhaseBeforeHeaders = "before_headers"
+	AbortPhaseAfterHeaders  = "after_headers"
+)
+
+func (c *Call) UnmarshalJSON(data []byte) error {
+	type callAlias Call
+	var raw callAlias
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	*c = Call(raw)
+	if !knownAbortPhase(c.AbortPhase) {
+		c.AbortPhase = ""
+	}
+	if !c.ClientAborted && c.Normalized.ClientAborted {
+		c.ClientAborted = true
+	}
+	if !c.ClientAborted {
+		c.AbortPhase = ""
+		return nil
+	}
+	if c.AbortPhase == "" {
+		c.AbortPhase = abortPhaseFromNormalized(c.Normalized)
+	}
+	return nil
+}
+
+func knownAbortPhase(phase string) bool {
+	switch phase {
+	case "", AbortPhaseBeforeHeaders, AbortPhaseAfterHeaders:
+		return true
+	default:
+		return false
+	}
+}
+
+func abortPhaseFromNormalized(n Normalized) string {
+	if n.Raw == nil {
+		return ""
+	}
+	var extra struct {
+		AbortPhase string `json:"abort_phase"`
+		Phase      string `json:"phase"`
+	}
+	if json.Unmarshal(n.Raw, &extra) != nil {
+		return ""
+	}
+	switch extra.AbortPhase {
+	case AbortPhaseBeforeHeaders, AbortPhaseAfterHeaders:
+		return extra.AbortPhase
+	}
+	switch extra.Phase {
+	case AbortPhaseBeforeHeaders, AbortPhaseAfterHeaders:
+		return extra.Phase
+	}
+	return ""
+}
+
+// Aborted reports a client disconnect. It prefers the typed field and
+// falls back to the deprecated normalized.client_aborted alias.
+func (c Call) Aborted() bool {
+	return c.ClientAborted || c.Normalized.ClientAborted
 }
 
 type Upstream struct {

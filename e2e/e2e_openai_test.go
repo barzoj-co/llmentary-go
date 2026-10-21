@@ -771,6 +771,69 @@ func TestE2EExpectNoCallsAndEmptyIsolatedFrom(t *testing.T) {
 	}
 }
 
+func TestE2EClientAbortedBeforeHeaders(t *testing.T) {
+	apiKey := requireOpenAIKey(t)
+	model := e2eModel()
+	proxy := startE2EProxy(t)
+	lm := sessionOnProxy(t, proxy)
+	body := []byte(`{
+		"model":` + strconv.Quote(model) + `,
+		"messages":[{"role":"user","content":"Write a 600-word story about a barge meeting. Start immediately."}],
+		"stream":true,
+		"temperature":0
+	}`)
+	reqCtx, reqCancel := context.WithCancel(context.Background())
+	defer reqCancel()
+	done := make(chan error, 1)
+	go func() {
+		req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, lm.OpenAIBaseURL("openai")+"/chat/completions", bytes.NewReader(body))
+		if err != nil {
+			done <- err
+			return
+		}
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+		req.Header.Set("Content-Type", "application/json")
+		key, value := lm.Header()
+		req.Header.Set(key, value)
+		resp, err := http.DefaultClient.Do(req)
+		if resp != nil {
+			_, _ = io.Copy(io.Discard, resp.Body)
+			_ = resp.Body.Close()
+		}
+		done <- err
+	}()
+	if !waitForSessionActivity(t, proxy.ControlURL, lm.SessionID(), 10*time.Second) {
+		reqCancel()
+		t.Fatal("proxy never saw the request before cancel")
+	}
+	time.Sleep(50 * time.Millisecond)
+	reqCancel()
+	<-done
+
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	trace := lm.Wait(ctx)
+	if len(trace.Calls) != 1 {
+		t.Fatalf("want 1 aborted call, got %d:\n%s", len(trace.Calls), trace.Summary())
+	}
+	call := trace.Calls[0]
+	if !call.ClientAborted || !call.Aborted() {
+		t.Fatalf("ClientAborted=%v Aborted=%v normalized=%v\n%s", call.ClientAborted, call.Aborted(), call.Normalized.ClientAborted, trace.Summary())
+	}
+	if call.HTTPStatus == http.StatusBadGateway {
+		t.Fatalf("abort must not be recorded as 502:\n%s", trace.Summary())
+	}
+	if !strings.EqualFold(call.Normalized.FinishReason, "cancelled") {
+		t.Fatalf("finish_reason=%q want cancelled\n%s", call.Normalized.FinishReason, trace.Summary())
+	}
+	if call.AbortPhase != llmentary.AbortPhaseBeforeHeaders && call.AbortPhase != llmentary.AbortPhaseAfterHeaders {
+		t.Fatalf("AbortPhase=%q want before_headers or after_headers\n%s", call.AbortPhase, trace.Summary())
+	}
+	if !lm.Check(ctx).Aborted() {
+		t.Fatal("Aborted() should pass")
+	}
+}
+
 func TestE2ESummaryRequestOnlyOn401AndAbort(t *testing.T) {
 	model := e2eModel()
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)

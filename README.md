@@ -171,6 +171,27 @@ lm.Expect(ctx, llmentary.AllowEmpty()).IsolatedFrom(other.SessionID())
 `AllowEmpty` it passes. Client messages contain `known sessions:` at most
 once.
 
+### Testing interruptions / barge-in
+
+A client cancel is a typed `Call` field. Older proxies only set
+`normalized.client_aborted`; the client copies that alias onto
+`Call.ClientAborted`. `AbortPhase` is `before_headers` or `after_headers`
+when the call was aborted; it is omitted otherwise. A client close after
+`[DONE]` or a terminal Responses event is not an abort.
+
+```go
+trace := lm.Wait(ctx)
+call := trace.Calls[0]
+if call.ClientAborted { // or call.Aborted()
+    phase := call.AbortPhase // "", before_headers, after_headers
+    _ = phase
+}
+lm.Expect(ctx).Aborted()
+```
+
+`http_status` is `0` for a before-headers abort, never `502`.
+`normalized.finish_reason` is `cancelled`.
+
 ## Waiting for calls
 
 The proxy `/sessions/{id}/wait` endpoint reads `timeout`, `quiet`, and
