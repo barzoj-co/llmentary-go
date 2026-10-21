@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.4.0](https://github.com/barzoj-co/llmentary-go/compare/v0.3.0...v0.4.0) (2026-10-21)
+
+
+### Features
+
+* add ExpectNoCalls and empty IsolatedFrom ([#24](https://github.com/barzoj-co/llmentary-go/issues/24)) ([e71b166](https://github.com/barzoj-co/llmentary-go/commit/e71b1662b1a81d78957b50f2b6c294c8fa4f3f8c))
+* expose typed ClientAborted and AbortPhase ([#22](https://github.com/barzoj-co/llmentary-go/issues/22)) ([676d54b](https://github.com/barzoj-co/llmentary-go/commit/676d54bec60d7faadc83edf8e5668e3ac4f55813))
+
+
+### Bug Fixes
+
+* label request-only spec checks in Summary ([#23](https://github.com/barzoj-co/llmentary-go/issues/23)) ([0ab0529](https://github.com/barzoj-co/llmentary-go/commit/0ab05291e462d4baa1508a8f2a9b32b325251671))
+* match IsolatedFrom on foreign user turns only ([#21](https://github.com/barzoj-co/llmentary-go/issues/21)) ([22adbba](https://github.com/barzoj-co/llmentary-go/commit/22adbba670874f97a87527230e5788c43ad90f4c))
+* pin proxy v0.4.0 ([#26](https://github.com/barzoj-co/llmentary-go/issues/26)) ([81789ee](https://github.com/barzoj-co/llmentary-go/commit/81789ee43c11a10460f6dd5ff0d710a6a848a3d8))
+
 ## [0.3.0](https://github.com/barzoj-co/llmentary-go/compare/v0.2.0...v0.3.0) (2026-10-21)
 
 
