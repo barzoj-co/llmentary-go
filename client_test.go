@@ -147,6 +147,9 @@ func TestCallsSessionNotFound(t *testing.T) {
 			t.Fatalf("error %q missing %q", err, want)
 		}
 	}
+	if n := countKnownSessionsHints(err.Error()); n != 1 {
+		t.Fatalf("known sessions: count=%d in %q", n, err)
+	}
 }
 
 func TestWaitSendsMinCalls(t *testing.T) {

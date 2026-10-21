@@ -63,7 +63,25 @@ assert := lm.Expect(ctx, llmentary.MinCalls(2))
 `ListSessions` is `GET /sessions`. A 404 from `GET /sessions/{id}` is
 `*llmentary.SessionNotFoundError` (`llmentary.IsSessionNotFound`). Expect/Check
 on a session that never recorded a call fail with
-`no calls recorded for session <id>; known sessions: …`.
+`no calls recorded for session <id>` and, when the client listed other
+sessions, `; known sessions: a, b` once (never `known sessions: GET /sessions`).
+
+## Negative tests: asserting zero LLM calls
+
+`Expect()` on a never-created session stays strict (DOG-2). Use an explicit
+opt-in:
+
+```go
+lm.ExpectNoCalls(ctx)
+lm.Expect(ctx, llmentary.AllowEmpty()).CallCount(0)
+lm.Expect(ctx, llmentary.AllowEmpty()).ToolNotCalled("x")
+lm.Expect(ctx, llmentary.AllowEmpty()).IsolatedFrom(other.SessionID())
+```
+
+`ExpectNoCalls` treats `404 session_not_found` as success and fails a
+session that recorded calls with `expected 0 LLM calls, got N` plus the
+trace summary. `IsolatedFrom(<never-created>)` is that same
+`no calls recorded for session <id>` assertion, not `SessionNotFound`.
 
 `wait` on a session that was never created (or was `DELETE`d) depends on
 `min_calls`:

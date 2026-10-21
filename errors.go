@@ -32,12 +32,21 @@ func (e *SessionNotFoundError) Error() string {
 		return "no calls recorded for session"
 	}
 	msg := fmt.Sprintf("no calls recorded for session %s", e.SessionID)
-	if len(e.KnownIDs) > 0 {
-		msg += "; known sessions: " + strings.Join(e.KnownIDs, ", ")
-	} else {
-		msg += "; known sessions: GET /sessions"
+	if hint := knownSessionsHint(e.KnownIDs); hint != "" {
+		msg += "; " + hint
 	}
 	return msg
+}
+
+func knownSessionsHint(ids []string) string {
+	if len(ids) == 0 {
+		return ""
+	}
+	return "known sessions: " + strings.Join(ids, ", ")
+}
+
+func countKnownSessionsHints(s string) int {
+	return strings.Count(s, "known sessions:")
 }
 
 func (e *SessionNotFoundError) Unwrap() error {
