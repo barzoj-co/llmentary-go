@@ -782,7 +782,7 @@ func TestE2ESummaryRequestOnlyOn401AndAbort(t *testing.T) {
 		"messages":[{"role":"user","content":"Reply with the single word hi."}],
 		"temperature":0
 	}`)
-	req, err := http.NewRequest(http.MethodPost, lm401.OpenAIBaseURL("openai")+"/chat/completions", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, lm401.OpenAIBaseURL("openai")+"/chat/completions", bytes.NewReader(body))
 	if err != nil {
 		t.Fatal(err)
 	}
