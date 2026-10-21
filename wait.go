@@ -46,8 +46,9 @@ func formatWaitDuration(d time.Duration) string {
 
 // WaitOptions configures /sessions/{id}/wait beyond quiet/timeout.
 type WaitOptions struct {
-	MinCalls int
-	Since    *Mark
+	MinCalls   int
+	Since      *Mark
+	AllowEmpty bool
 }
 
 // Mark is a seq checkpoint from Session.Mark.
@@ -71,6 +72,12 @@ func Since(m Mark) WaitOption {
 		cp := m
 		o.Since = &cp
 	}
+}
+
+// AllowEmpty lets NoErrors and ToolNotCalled pass when a filter or Since
+// matches zero calls. It is not sent to the proxy.
+func AllowEmpty() WaitOption {
+	return func(o *WaitOptions) { o.AllowEmpty = true }
 }
 
 func applyWaitOptions(opts []WaitOption) WaitOptions {

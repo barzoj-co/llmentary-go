@@ -60,6 +60,15 @@ func TestWaitQueryStringDefaultAndConfigured(t *testing.T) {
 		}
 	})
 
+	t.Run("allow_empty_not_in_query", func(t *testing.T) {
+		gotQuery = ""
+		lm := New(t, WithControlURL(srv.URL), WithProxyURL(srv.URL), WithWait(200*time.Millisecond, 5*time.Second))
+		_ = lm.Wait(context.Background(), AllowEmpty(), Since(Mark{Seq: 1}))
+		if gotQuery != "timeout=5s&quiet=200ms" {
+			t.Fatalf("AllowEmpty/Since must not be sent to wait: %q", gotQuery)
+		}
+	})
+
 	t.Run("env", func(t *testing.T) {
 		gotQuery = ""
 		t.Setenv(EnvWaitTimeout, "90")
@@ -233,5 +242,43 @@ func TestFormatWaitDurationKeepsSeconds(t *testing.T) {
 	}
 	if got := waitQuery(DefaultWaitQuiet, DefaultWaitTimeout, 2); got != "timeout=30s&quiet=500ms&min_calls=2" {
 		t.Fatalf("min_calls query = %q", got)
+	}
+}
+
+func TestSessionSinceEmptyNoErrorsFails(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/wait") {
+			_ = json.NewEncoder(w).Encode(sessionPayload{ID: "s", Calls: []Call{{Seq: 1, Normalized: Normalized{FinishReason: "stop"}}}})
+			return
+		}
+		if r.Method == http.MethodDelete {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	t.Cleanup(srv.Close)
+
+	lm := New(t, WithControlURL(srv.URL), WithProxyURL(srv.URL), WithWait(time.Millisecond, time.Second))
+	rec := &fakeTB{}
+	lm.t = rec
+	if lm.Check(context.Background(), Since(Mark{Seq: 1})).NoErrors() {
+		t.Fatal("Expect(Since(last)).NoErrors should fail on zero calls")
+	}
+	rec.flush()
+	joined := strings.Join(rec.messages, "\n")
+	for _, want := range []string{"no calls matched query", "since=1", "session has 1 calls"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("missing %q in:\n%s", want, joined)
+		}
+	}
+
+	ok := &fakeTB{}
+	lm.t = ok
+	if !lm.Check(context.Background(), Since(Mark{Seq: 1}), AllowEmpty()).NoErrors() {
+		t.Fatalf("AllowEmpty should pass: %v", ok.messages)
+	}
+	if ok.failed {
+		t.Fatalf("AllowEmpty recorded errors: %v", ok.messages)
 	}
 }

@@ -125,7 +125,9 @@ proxy from the test with `StartForTest`.
 `trace.Query()` before `Expect(t)` / `Check(t)`.
 
 ```go
-assert := lm.Expect(context.Background())
+mark := lm.Mark(context.Background())
+// … one turn …
+assert := lm.Expect(context.Background(), llmentary.Since(mark))
 assert.CallCount(1)
 assert.ToolCalled("get_weather", llmentary.ArgsSubset(map[string]any{"city": "Paris"}))
 assert.ToolNotCalled("delete_user")
@@ -133,6 +135,9 @@ assert.NoRetries()
 assert.NoErrors()
 assert.TokensBelow(1000)
 ```
+
+`NoErrors` / `ToolNotCalled` fail when a filter or `Since` matches zero calls.
+Use `llmentary.AllowEmpty()` only when the test intends an empty match.
 
 See [docs/go-client.md](docs/go-client.md) for the full session, query, and
 assertion API.

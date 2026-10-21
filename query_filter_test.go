@@ -38,6 +38,95 @@ func TestSinceFiltersExpect(t *testing.T) {
 	}
 }
 
+func TestEmptyFilteredNoErrorsAndToolNotCalledFail(t *testing.T) {
+	trace := goldenMultiCallTrace()
+	cases := []struct {
+		name   string
+		query  Query
+		wantIn []string
+	}{
+		{
+			name:   "without_tools after tool turns",
+			query:  trace.Query().Since(Mark{Seq: 1}).WithoutTools(),
+			wantIn: []string{"no calls matched query", "without_tools", "since=1", "session has 3 calls"},
+		},
+		{
+			name:   "offers_tool missing",
+			query:  trace.Query().OffersTool("missing"),
+			wantIn: []string{"no calls matched query", `offers_tool("missing")`, "session has 3 calls"},
+		},
+		{
+			name:   "since last",
+			query:  trace.Query().Since(Mark{Seq: 3}),
+			wantIn: []string{"no calls matched query", "since=3", "session has 3 calls"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name+"/NoErrors", func(t *testing.T) {
+			tb := &fakeTB{}
+			if tc.query.Check(tb).NoErrors() {
+				t.Fatal("empty filter NoErrors should fail")
+			}
+			tb.flush()
+			joined := strings.Join(tb.messages, "\n")
+			for _, want := range tc.wantIn {
+				if !strings.Contains(joined, want) {
+					t.Fatalf("missing %q in:\n%s", want, joined)
+				}
+			}
+		})
+		t.Run(tc.name+"/ToolNotCalled", func(t *testing.T) {
+			tb := &fakeTB{}
+			if tc.query.Check(tb).ToolNotCalled("x") {
+				t.Fatal("empty filter ToolNotCalled should fail")
+			}
+			tb.flush()
+			joined := strings.Join(tb.messages, "\n")
+			for _, want := range tc.wantIn {
+				if !strings.Contains(joined, want) {
+					t.Fatalf("missing %q in:\n%s", want, joined)
+				}
+			}
+		})
+	}
+}
+
+func TestEmptyFilteredAllowEmptyPasses(t *testing.T) {
+	trace := goldenMultiCallTrace()
+	empty := trace.Query().OffersTool("missing").Since(Mark{Seq: 3})
+	tb := &fakeTB{}
+	if !empty.AllowEmpty().Check(tb).NoErrors() {
+		t.Fatalf("Query.AllowEmpty NoErrors failed: %v", tb.messages)
+	}
+	if !empty.Check(tb, AllowEmpty()).ToolNotCalled("x") {
+		t.Fatalf("AllowEmpty() ToolNotCalled failed: %v", tb.messages)
+	}
+	if tb.failed {
+		t.Fatalf("AllowEmpty should not record errors: %v", tb.messages)
+	}
+}
+
+func TestNonEmptyFilterAssertionsUnchanged(t *testing.T) {
+	trace := goldenMultiCallTrace()
+	router := trace.Query().WithoutTools()
+	if !router.Expect(t).NoErrors() {
+		t.Fatal("non-empty without_tools NoErrors should pass")
+	}
+	if !router.Expect(t).ToolNotCalled("get_risks") {
+		t.Fatal("router turn should not call get_risks")
+	}
+	if !router.Expect(t).CallCount(1) {
+		t.Fatal("router CallCount(1) should pass")
+	}
+	specialist := trace.Query().OffersTool("get_risks")
+	if !specialist.Expect(t).CallCount(2) {
+		t.Fatal("offers_tool CallCount(2) should pass")
+	}
+	if !specialist.Expect(t).ToolCalled("get_risks") {
+		t.Fatal("offers_tool ToolCalled should pass")
+	}
+}
+
 func goldenMultiCallTrace() Trace {
 	six := []ToolDecl{
 		{Name: "get_risks"}, {Name: "get_user_health_tips"}, {Name: "get_labs"},

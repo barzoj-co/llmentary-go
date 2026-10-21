@@ -16,6 +16,7 @@ func TestFailNoCallsNamesSessionAndKnownIDs(t *testing.T) {
 	tb := &fakeTB{}
 	a := &Assertions{t: tb, trace: Trace{SessionID: "sess-zero"}}
 	a.failNoCalls([]string{"alpha", "beta"})
+	tb.flush()
 	joined := strings.Join(tb.messages, "\n")
 	for _, want := range []string{
 		"no calls recorded for session sess-zero",
@@ -200,10 +201,11 @@ func TestAssertionFailureMessagesIncludeTraceSummary(t *testing.T) {
 	})
 
 	nonFatal := &fakeTB{}
-	check := &Assertions{t: nonFatal, trace: trace}
+	check := &Assertions{t: nonFatal, trace: trace, sessionTrace: trace}
 	check.ToolCalled("missing_tool")
 	check.FinishReason("length")
-	trace.Query().APIType("responses").Check(nonFatal).CallCount(1)
+	check.CallCount(1)
+	nonFatal.flush()
 
 	joined := strings.Join(nonFatal.messages, "\n")
 	for _, want := range []string{
@@ -219,6 +221,9 @@ func TestAssertionFailureMessagesIncludeTraceSummary(t *testing.T) {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("failure output missing %q:\n%s", want, joined)
 		}
+	}
+	if strings.Count(joined, "Trace summary:") != 1 {
+		t.Fatalf("soft failures should include the summary once, got %d:\n%s", strings.Count(joined, "Trace summary:"), joined)
 	}
 	if !nonFatal.failed || nonFatal.fatal {
 		t.Fatalf("non-fatal assertions should record errors without fatal: %+v", nonFatal)
@@ -240,9 +245,21 @@ type fakeTB struct {
 	messages []string
 	failed   bool
 	fatal    bool
+	cleanups []func()
 }
 
 func (f *fakeTB) Helper() {}
+
+func (f *fakeTB) Cleanup(fn func()) {
+	f.cleanups = append(f.cleanups, fn)
+}
+
+func (f *fakeTB) flush() {
+	for i := len(f.cleanups) - 1; i >= 0; i-- {
+		f.cleanups[i]()
+	}
+	f.cleanups = nil
+}
 
 func (f *fakeTB) Error(args ...any) {
 	f.failed = true
@@ -311,3 +328,122 @@ func fixtureTrace() Trace {
 }
 
 func intPtrForTest(v int) *int { return &v }
+
+func TestTraceSummaryOmitsUnknownFinishAndCallKeys(t *testing.T) {
+	in, out := 12, 3
+	trace := Trace{SessionID: "graph", Calls: []Call{
+		{
+			Seq:           1,
+			Provider:      "openai",
+			APIFamily:     "openai.chat",
+			HTTPStatus:    200,
+			SessionSource: "path",
+			Normalized: Normalized{
+				FinishReason: "stop",
+				OutputText:   `{"route":"specialist"}`,
+				Usage:        &Usage{InputTokens: &in, OutputTokens: &out},
+			},
+		},
+		{
+			Seq:           2,
+			Provider:      "openai",
+			APIFamily:     "openai.chat",
+			HTTPStatus:    200,
+			SessionSource: "path",
+			Normalized: Normalized{
+				FinishReason:  "tool_calls",
+				ToolsDeclared: []ToolDecl{{Name: "get_risks"}},
+				ToolCalls:     []ToolCall{{Index: 0, Name: "get_risks", ArgumentsRaw: `{"n":1}`}},
+			},
+		},
+		{
+			Seq:           3,
+			Provider:      "openai",
+			APIFamily:     "openai.chat",
+			HTTPStatus:    200,
+			SessionSource: "header",
+			Normalized:    Normalized{FinishReason: "stop", OutputText: "done"},
+		},
+		{
+			Seq:           4,
+			Provider:      "openai",
+			APIFamily:     "openai.chat",
+			HTTPStatus:    401,
+			SessionSource: "path",
+			Normalized: Normalized{
+				FinishReason: "unknown",
+				Error:        &CallError{HTTPStatus: 401, Code: "invalid_api_key", Message: "bad key"},
+			},
+		},
+	}}
+	summary := trace.Summary()
+	if strings.Contains(summary, "call keys=") {
+		t.Fatalf("summary should not dump call keys:\n%s", summary)
+	}
+	if strings.Contains(summary, "finish=unknown") {
+		t.Fatalf("summary should omit finish=unknown:\n%s", summary)
+	}
+	for _, line := range strings.Split(summary, "\n") {
+		if strings.Contains(line, "status=401") && strings.Contains(line, "finish=") {
+			t.Fatalf("401 line should omit finish=:\n%s", line)
+		}
+	}
+	for _, want := range []string{"src=path", "src=header", "tokens=12/3", "finish=tool_calls", "finish=stop"} {
+		if !strings.Contains(summary, want) {
+			t.Fatalf("summary missing %q:\n%s", want, summary)
+		}
+	}
+}
+
+func TestCallAccessorsSessionSourceAndUpstreamURL(t *testing.T) {
+	cases := []struct {
+		name   string
+		call   Call
+		source string
+		url    string
+	}{
+		{
+			name:   "header",
+			call:   Call{SessionSource: "header", Upstream: Upstream{URL: "https://api.openai.com/v1/chat/completions"}},
+			source: "header",
+			url:    "https://api.openai.com/v1/chat/completions",
+		},
+		{
+			name:   "baggage",
+			call:   Call{SessionSource: "baggage", Upstream: Upstream{URL: "https://api.openai.com/v1/responses"}},
+			source: "baggage",
+			url:    "https://api.openai.com/v1/responses",
+		},
+		{
+			name:   "path",
+			call:   Call{SessionSource: "path", Upstream: Upstream{URL: "https://api.openai.com/v1/chat/completions"}},
+			source: "path",
+			url:    "https://api.openai.com/v1/chat/completions",
+		},
+		{
+			name:   "default",
+			call:   Call{SessionSource: "default"},
+			source: "default",
+			url:    "",
+		},
+		{
+			name:   "absent",
+			call:   Call{},
+			source: "",
+			url:    "",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.call.SessionSource != tc.source {
+				t.Fatalf("SessionSource=%q want %q", tc.call.SessionSource, tc.source)
+			}
+			if got := tc.call.UpstreamURL(); got != tc.url {
+				t.Fatalf("UpstreamURL()=%q want %q", got, tc.url)
+			}
+			if strings.Contains(tc.call.UpstreamURL(), "/s/") {
+				t.Fatalf("upstream URL leaked session prefix: %q", tc.call.UpstreamURL())
+			}
+		})
+	}
+}

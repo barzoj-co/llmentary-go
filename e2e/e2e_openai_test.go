@@ -423,8 +423,11 @@ func TestE2EPathSessionAttribution(t *testing.T) {
 	if trace.Calls[0].SessionID != lm.SessionID() {
 		t.Fatalf("session=%q want %q", trace.Calls[0].SessionID, lm.SessionID())
 	}
-	if src := trace.Calls[0].SessionSource; src != "" && src != "path" {
-		t.Fatalf("session_source=%q", src)
+	if src := trace.Calls[0].SessionSource; src != "path" {
+		t.Fatalf("session_source=%q want path", src)
+	}
+	if u := trace.Calls[0].UpstreamURL(); u == "" || strings.Contains(u, "/s/") {
+		t.Fatalf("upstream_url=%q should be set and omit /s/", u)
 	}
 	if trace.Calls[0].Normalized.Usage == nil {
 		t.Fatalf("path session missing usage:\n%s", trace.Summary())
@@ -521,6 +524,53 @@ func TestE2EMarkSinceAndWithoutTools(t *testing.T) {
 	}
 	if assert.Trace().Query().WithoutTools().Len() != 0 {
 		t.Fatal("since(mark) should not include the router-style turn")
+	}
+}
+
+func TestE2EEmptySinceNoErrorsFails(t *testing.T) {
+	apiKey := requireOpenAIKey(t)
+	model := e2eModel()
+	lm := newSession(t)
+	body := []byte(`{
+		"model":` + strconv.Quote(model) + `,
+		"messages":[{"role":"user","content":"Reply with the single word hi."}],
+		"temperature":0
+	}`)
+	_ = postOpenAI(t, apiKey, lm, "/chat/completions", body)
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	assert := lm.Expect(ctx)
+	assert.CallCount(1)
+	assert.NoErrors()
+	mark := lm.Mark(ctx)
+
+	rec := &e2eRecorder{}
+	if lm.Wait(ctx).Query().Since(mark).Check(rec).NoErrors() {
+		t.Fatal("expect(since=mark after last call).NoErrors should fail")
+	}
+	rec.flush()
+	joined := strings.Join(rec.messages, "\n")
+	for _, want := range []string{"no calls matched query", "since=", "session has 1 calls"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("empty-match message missing %q:\n%s", want, joined)
+		}
+	}
+
+	ok := &e2eRecorder{}
+	if !lm.Wait(ctx).Query().Since(mark).Check(ok, llmentary.AllowEmpty()).NoErrors() {
+		t.Fatalf("AllowEmpty should pass: %v", ok.messages)
+	}
+	if ok.failed {
+		t.Fatalf("AllowEmpty recorded errors: %v", ok.messages)
+	}
+
+	notCalled := &e2eRecorder{}
+	if lm.Wait(ctx).Query().Since(mark).Check(notCalled).ToolNotCalled("echo_city") {
+		t.Fatal("empty since ToolNotCalled should fail")
+	}
+	notCalled.flush()
+	if !strings.Contains(strings.Join(notCalled.messages, "\n"), "no calls matched query") {
+		t.Fatalf("ToolNotCalled empty-match missing:\n%s", strings.Join(notCalled.messages, "\n"))
 	}
 }
 
@@ -661,9 +711,21 @@ type e2eRecorder struct {
 	testing.TB
 	messages []string
 	failed   bool
+	cleanups []func()
 }
 
 func (f *e2eRecorder) Helper() {}
+
+func (f *e2eRecorder) Cleanup(fn func()) {
+	f.cleanups = append(f.cleanups, fn)
+}
+
+func (f *e2eRecorder) flush() {
+	for i := len(f.cleanups) - 1; i >= 0; i-- {
+		f.cleanups[i]()
+	}
+	f.cleanups = nil
+}
 
 func (f *e2eRecorder) Error(args ...any) {
 	f.failed = true
