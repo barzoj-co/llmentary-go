@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.3.0](https://github.com/barzoj-co/llmentary-go/compare/v0.2.0...v0.3.0) (2026-10-21)
+
+
+### Features
+
+* add IsolatedFrom, wait 404 mapping, and seq in summaries ([#18](https://github.com/barzoj-co/llmentary-go/issues/18)) ([c2ab8a0](https://github.com/barzoj-co/llmentary-go/commit/c2ab8a02de11d4529e302685640089546030c992))
+
+
+### Bug Fixes
+
+* fail vacuous empty filtered assertions ([#15](https://github.com/barzoj-co/llmentary-go/issues/15)) ([4d10519](https://github.com/barzoj-co/llmentary-go/commit/4d10519e402bf0178332f23cc033e0c91045f3d3))
+* pin proxy v0.2.2 ([#19](https://github.com/barzoj-co/llmentary-go/issues/19)) ([3651223](https://github.com/barzoj-co/llmentary-go/commit/3651223d18edd731c834058eae5ba85b1f9a96c3))
+* pin proxy v0.3.0 ([#20](https://github.com/barzoj-co/llmentary-go/issues/20)) ([a9e83c0](https://github.com/barzoj-co/llmentary-go/commit/a9e83c0480bc33d2d6dd8a90b2cf33321671a7d7))
+
 ## [0.2.0](https://github.com/barzoj-co/llmentary-go/compare/v0.1.0...v0.2.0) (2026-10-21)
 
 
