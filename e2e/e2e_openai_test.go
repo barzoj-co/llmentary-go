@@ -771,6 +771,80 @@ func TestE2EExpectNoCallsAndEmptyIsolatedFrom(t *testing.T) {
 	}
 }
 
+func TestE2ESummaryRequestOnlyOn401AndAbort(t *testing.T) {
+	model := e2eModel()
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+
+	lm401 := newSession(t)
+	body := []byte(`{
+		"model":` + strconv.Quote(model) + `,
+		"messages":[{"role":"user","content":"Reply with the single word hi."}],
+		"temperature":0
+	}`)
+	req, err := http.NewRequest(http.MethodPost, lm401.OpenAIBaseURL("openai")+"/chat/completions", bytes.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer sk-invalid-llmentary-e2e")
+	req.Header.Set("Content-Type", "application/json")
+	key, value := lm401.Header()
+	req.Header.Set(key, value)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("invalid key status=%d want 401", resp.StatusCode)
+	}
+	trace401 := lm401.Wait(ctx)
+	if len(trace401.Calls) != 1 {
+		t.Fatalf("401 recorded %d calls:\n%s", len(trace401.Calls), trace401.Summary())
+	}
+	if !strings.Contains(trace401.Summary(), "spec=request_only") {
+		t.Fatalf("401 summary want spec=request_only:\n%s", trace401.Summary())
+	}
+
+	lmAbort := newSession(t)
+	abortBody := []byte(`{
+		"model":` + strconv.Quote(model) + `,
+		"messages":[{"role":"user","content":"Write a 600-word story about a barge meeting. Start immediately."}],
+		"stream":true,
+		"temperature":0
+	}`)
+	reqCtx, reqCancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer reqCancel()
+	areq, err := http.NewRequestWithContext(reqCtx, http.MethodPost, lmAbort.OpenAIBaseURL("openai")+"/chat/completions", bytes.NewReader(abortBody))
+	if err != nil {
+		t.Fatal(err)
+	}
+	areq.Header.Set("Authorization", "Bearer "+requireOpenAIKey(t))
+	areq.Header.Set("Content-Type", "application/json")
+	akey, avalue := lmAbort.Header()
+	areq.Header.Set(akey, avalue)
+	aresp, aerr := http.DefaultClient.Do(areq)
+	if aresp != nil {
+		_, _ = io.Copy(io.Discard, aresp.Body)
+		_ = aresp.Body.Close()
+	}
+	if aerr == nil && reqCtx.Err() == nil {
+		t.Fatal("expected the 50ms cancel to abort the streaming request")
+	}
+	traceAbort := lmAbort.Wait(ctx)
+	if len(traceAbort.Calls) != 1 {
+		t.Fatalf("abort recorded %d calls:\n%s", len(traceAbort.Calls), traceAbort.Summary())
+	}
+	sum := traceAbort.Summary()
+	if !strings.Contains(sum, "spec=request_only") {
+		t.Fatalf("abort summary want spec=request_only:\n%s", sum)
+	}
+	if strings.Contains(sum, "status=0") || strings.Contains(sum, "http=0") {
+		t.Fatalf("abort summary should omit status=0:\n%s", sum)
+	}
+}
+
 func TestE2EIsolatedFromPathSessions(t *testing.T) {
 	apiKey := requireOpenAIKey(t)
 	proxy := startE2EProxy(t)

@@ -269,6 +269,12 @@ assert.SystemPromptContains("You are")
 not checked. Do not treat the validation object as a violation. The same empty
 vs absent rule applies to `ignored_fields`.
 
+`Call.SpecStatusLabel()` / `Summary()` use the same tokens as the proxy log:
+`clean` (request and response checked, 0 findings), `request_only` (response
+not checked — 401s and client aborts), `N violations`, `not checked`,
+`skipped:<reason>`. A before-headers abort with `http_status` 0 omits
+`status=` from the summary.
+
 | Field | Meaning |
 |---|---|
 | `validation` | Metadata: mode, profile, spec SHA, request/response checked, skipped reason |
