@@ -3,14 +3,22 @@
 Workflows live under `.github/workflows/`. The main pipeline is `ci.yml`:
 
 - `lint`: `go vet` and a pinned `golangci-lint`
-- `test`: unit tests (`go test ./...`) and tokenless Codecov upload (`unit`)
+- `test`: unit tests (`go test ./...`) and tokenless Codecov upload (`unit`).
+  The job `needs: [integration]` with `if: always()` so it still runs when
+  integration is skipped (forks). After unit tests it downloads the
+  `coverage-integration` artifact and runs `scripts/coverage-gate.sh`, which
+  merges both coverprofiles, applies `codecov.yml` ignores (`examples/**`,
+  `e2e/**`), prints the total, and fails below `.coverage-threshold` (or 90
+  when the PR head branch is `release-please--*`). Missing integration
+  profile fails the required `test` check — same idea as `e2e-gate`.
 - `integration`: non-fork pull requests and pushes to `main`; downloads the
   pinned `ProxyVersion` GitHub Release of `barzoj-co/llmentary` (`v0.4.0`)
   with `llmentary.DownloadRelease` (checksum-verified). The existing
   `secrets.LLMTESTLAB_REPO_TOKEN` is passed as `GH_TOKEN` (never in a URL or
   log) so the private release download does not use the default Actions
   `GITHUB_TOKEN`. Runs the mock-upstream example, uploads
-  `coverage-integration.out` tokenless
+  `coverage-integration.out` tokenless, and publishes the same file as a
+  workflow artifact for the `test` job gate
 - `e2e`: same event filter as `integration`; uses the `openai-e2e` environment
   so each live run waits for maintainer approval; installs the same released
   `v0.4.0` binary (no build from proxy main), downloads and compiles the

@@ -70,6 +70,7 @@ jobs:
           ./scripts/check-pr-oidc.sh
           ./scripts/check-pr-oidc.sh --self-test
           ./scripts/e2e-gate.sh --self-test
+          ./scripts/coverage-gate.sh --self-test
       - name: Labels file contains release-please labels
         run: |
           grep -Fq 'autorelease: pending' .github/labels.yml
