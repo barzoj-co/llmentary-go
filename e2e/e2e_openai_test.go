@@ -846,6 +846,10 @@ func TestE2ESummaryRequestOnlyOn401AndAbort(t *testing.T) {
 	if len(traceAbort.Calls) != 1 {
 		t.Fatalf("abort recorded %d calls:\n%s", len(traceAbort.Calls), traceAbort.Summary())
 	}
+	if !traceAbort.Calls[0].Normalized.ClientAborted {
+		t.Fatalf("abort path want client_aborted call, got http=%d aborted=%v\n%s",
+			traceAbort.Calls[0].HTTPStatus, traceAbort.Calls[0].Normalized.ClientAborted, traceAbort.Summary())
+	}
 	sum := traceAbort.Summary()
 	if !strings.Contains(sum, "spec=request_only") {
 		t.Fatalf("abort summary want spec=request_only:\n%s", sum)
@@ -967,7 +971,7 @@ func waitForSessionActivity(t *testing.T, lm *llmentary.Session, d time.Duration
 	deadline := time.Now().Add(d)
 	for time.Now().Before(deadline) {
 		for _, info := range lm.ListSessions(context.Background()) {
-			if info.ID == lm.SessionID() && (info.Active > 0 || info.Calls > 0) {
+			if info.ID == lm.SessionID() && info.Active > 0 {
 				return true
 			}
 		}
