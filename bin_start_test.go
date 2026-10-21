@@ -5,8 +5,10 @@ package llmentary
 import (
 	"bytes"
 	"context"
+	"errors"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -18,44 +20,33 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	if code := os.Getenv("LLMENTARY_FAKE_EXIT"); code != "" {
-		n, err := strconv.Atoi(code)
-		if err != nil {
-			os.Exit(2)
-		}
-		os.Exit(n)
-	}
-	if os.Getenv("LLMENTARY_FAKE_PROXY") == "1" {
-		os.Exit(runFakeProxy())
+	if code, ok := fakeHelperMode(); ok {
+		os.Exit(code)
 	}
 	os.Exit(m.Run())
 }
 
-func runFakeProxy() int {
-	control, token := "", ""
-	args := os.Args[1:]
-	for i := 0; i < len(args); i++ {
-		if i+1 >= len(args) {
-			continue
-		}
-		switch args[i] {
-		case "--control":
-			control = args[i+1]
-			i++
-		case "--control-token":
-			token = args[i+1]
-			i++
-		case "--listen", "--upstream":
-			i++
-		}
-	}
-	status := 200
-	if raw := os.Getenv("FAKE_HEALTH_STATUS"); raw != "" {
+// fakeHelperMode is the TestMain dispatch for portable subprocess fixtures.
+// Windows cannot run shebang scripts or /bin/sh. LLMENTARY_FAKE_EXIT wins if both are set.
+func fakeHelperMode() (code int, handled bool) {
+	if raw := os.Getenv("LLMENTARY_FAKE_EXIT"); raw != "" {
 		n, err := strconv.Atoi(raw)
 		if err != nil {
-			return 2
+			return 2, true
 		}
-		status = n
+		return n, true
+	}
+	if os.Getenv("LLMENTARY_FAKE_PROXY") == "1" {
+		return runFakeProxy(), true
+	}
+	return 0, false
+}
+
+func runFakeProxy() int {
+	control, token := parseFakeProxyArgs(os.Args[1:])
+	status, err := fakeHealthStatus()
+	if err != nil {
+		return 2
 	}
 	if os.Getenv("FAKE_IGNORE_INT") == "1" {
 		signal.Ignore(os.Interrupt)
@@ -71,30 +62,73 @@ func runFakeProxy() int {
 	}
 	_, _ = os.Stdout.Write([]byte("fake-proxy-start\n"))
 	_, _ = os.Stderr.Write([]byte("fake-proxy-ready\n"))
-	host, port, err := net.SplitHostPort(control)
+	addr, err := rewriteLoopbackHost(control)
 	if err != nil {
 		return 2
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/healthz", fakeHealthz(token, status))
+	if err := http.ListenAndServe(addr, mux); err != nil {
+		return 1
+	}
+	return 0
+}
+
+func parseFakeProxyArgs(args []string) (control, token string) {
+	for i := 0; i < len(args); i++ {
+		if i+1 >= len(args) {
+			continue
+		}
+		switch args[i] {
+		case "--control":
+			control = args[i+1]
+			i++
+		case "--control-token":
+			token = args[i+1]
+			i++
+		case "--listen", "--upstream":
+			i++
+		}
+	}
+	return control, token
+}
+
+func fakeHealthStatus() (int, error) {
+	raw := os.Getenv("FAKE_HEALTH_STATUS")
+	if raw == "" {
+		return 200, nil
+	}
+	return strconv.Atoi(raw)
+}
+
+func rewriteLoopbackHost(addr string) (string, error) {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return "", err
 	}
 	if host == "" || host == "0.0.0.0" {
 		host = "127.0.0.1"
 	}
-	mux := http.NewServeMux()
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+	return net.JoinHostPort(host, port), nil
+}
+
+func fakeHealthz(token string, status int) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
 		if token != "" && r.Header.Get("Authorization") != "Bearer "+token {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
 		w.WriteHeader(status)
 		_, _ = w.Write([]byte("ok"))
-	})
-	if err := http.ListenAndServe(net.JoinHostPort(host, port), mux); err != nil {
-		return 1
 	}
-	return 0
 }
 
 func fakeProxyBin() string {
-	return os.Args[0]
+	bin, err := filepath.Abs(os.Args[0])
+	if err != nil {
+		return os.Args[0]
+	}
+	return bin
 }
 
 func TestStartForTestHealthyFake(t *testing.T) {
@@ -225,9 +259,7 @@ func TestIsExpectedExitCodes(t *testing.T) {
 		t.Fatal("nil is expected")
 	}
 	runExit := func(code int) error {
-		cmd := exec.Command(os.Args[0], "-test.run=^$")
-		cmd.Env = append(os.Environ(), "LLMENTARY_FAKE_EXIT="+strconv.Itoa(code))
-		return cmd.Run()
+		return runFakeHelper(t, []string{"LLMENTARY_FAKE_EXIT=" + strconv.Itoa(code)}).Run()
 	}
 	if err := runExit(130); !isExpectedExit(err, false) {
 		t.Fatalf("exit 130 should be expected: %v", err)
@@ -242,6 +274,208 @@ func TestIsExpectedExitCodes(t *testing.T) {
 	if !isExpectedExit(errString("signal: killed"), false) || !isExpectedExit(errString("signal: interrupt"), true) {
 		t.Fatal("signal text should be expected")
 	}
+}
+
+func TestFakeHelperModeExitCodes(t *testing.T) {
+	t.Setenv("LLMENTARY_FAKE_PROXY", "")
+	t.Setenv("LLMENTARY_FAKE_EXIT", "")
+	if code, ok := fakeHelperMode(); ok || code != 0 {
+		t.Fatalf("idle helper mode code=%d ok=%v", code, ok)
+	}
+
+	t.Setenv("LLMENTARY_FAKE_EXIT", "130")
+	code, ok := fakeHelperMode()
+	if !ok || code != 130 {
+		t.Fatalf("exit 130: code=%d ok=%v", code, ok)
+	}
+
+	t.Setenv("LLMENTARY_FAKE_EXIT", "0")
+	code, ok = fakeHelperMode()
+	if !ok || code != 0 {
+		t.Fatalf("exit 0: code=%d ok=%v", code, ok)
+	}
+
+	t.Setenv("LLMENTARY_FAKE_EXIT", "not-a-number")
+	code, ok = fakeHelperMode()
+	if !ok || code != 2 {
+		t.Fatalf("invalid exit: code=%d ok=%v", code, ok)
+	}
+
+	t.Setenv("LLMENTARY_FAKE_EXIT", "7")
+	t.Setenv("LLMENTARY_FAKE_PROXY", "1")
+	code, ok = fakeHelperMode()
+	if !ok || code != 7 {
+		t.Fatalf("exit wins over proxy: code=%d ok=%v", code, ok)
+	}
+}
+
+func TestParseFakeProxyArgs(t *testing.T) {
+	t.Parallel()
+	control, token := parseFakeProxyArgs([]string{
+		"--listen", "127.0.0.1:1",
+		"--control", "127.0.0.1:2",
+		"--control-token", "secret",
+		"--upstream", "openai=https://example.test",
+		"--help-ignore",
+	})
+	if control != "127.0.0.1:2" || token != "secret" {
+		t.Fatalf("control=%q token=%q", control, token)
+	}
+
+	control, token = parseFakeProxyArgs([]string{"--control"})
+	if control != "" || token != "" {
+		t.Fatalf("dangling --control: control=%q token=%q", control, token)
+	}
+
+	control, token = parseFakeProxyArgs(nil)
+	if control != "" || token != "" {
+		t.Fatalf("empty args: control=%q token=%q", control, token)
+	}
+}
+
+func TestRewriteLoopbackHost(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		in, want string
+	}{
+		{"127.0.0.1:9", "127.0.0.1:9"},
+		{"0.0.0.0:9", "127.0.0.1:9"},
+		{":9", "127.0.0.1:9"},
+		{"[::1]:9", "[::1]:9"},
+	}
+	for _, tc := range cases {
+		got, err := rewriteLoopbackHost(tc.in)
+		if err != nil || got != tc.want {
+			t.Fatalf("rewriteLoopbackHost(%q)=%q %v want %q", tc.in, got, err, tc.want)
+		}
+	}
+	if _, err := rewriteLoopbackHost("not-a-hostport"); err == nil {
+		t.Fatal("expected error for missing port")
+	}
+}
+
+func TestFakeHealthStatusAndHandler(t *testing.T) {
+	t.Setenv("FAKE_HEALTH_STATUS", "")
+	got, err := fakeHealthStatus()
+	if err != nil || got != 200 {
+		t.Fatalf("default status=%d err=%v", got, err)
+	}
+	t.Setenv("FAKE_HEALTH_STATUS", "503")
+	got, err = fakeHealthStatus()
+	if err != nil || got != 503 {
+		t.Fatalf("503 status=%d err=%v", got, err)
+	}
+	t.Setenv("FAKE_HEALTH_STATUS", "nope")
+	if _, err = fakeHealthStatus(); err == nil {
+		t.Fatal("expected parse error")
+	}
+
+	handler := fakeHealthz("secret", 200)
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	rec := httptest.NewRecorder()
+	handler(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("missing token status=%d", rec.Code)
+	}
+	req.Header.Set("Authorization", "Bearer wrong")
+	rec = httptest.NewRecorder()
+	handler(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("wrong token status=%d", rec.Code)
+	}
+	req.Header.Set("Authorization", "Bearer secret")
+	rec = httptest.NewRecorder()
+	handler(rec, req)
+	if rec.Code != 200 || rec.Body.String() != "ok" {
+		t.Fatalf("authed status=%d body=%q", rec.Code, rec.Body.String())
+	}
+}
+
+func TestFakeProxyBinIsTestExecutable(t *testing.T) {
+	bin := fakeProxyBin()
+	if !filepath.IsAbs(bin) {
+		t.Fatalf("fakeProxyBin is not absolute: %q", bin)
+	}
+	info, err := os.Stat(bin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.IsDir() {
+		t.Fatalf("fakeProxyBin is a directory: %q", bin)
+	}
+	switch strings.ToLower(filepath.Ext(bin)) {
+	case ".sh", ".bash", ".py", ".ps1", ".bat", ".cmd":
+		t.Fatalf("fakeProxyBin looks like a shell script: %q", bin)
+	}
+	abs, err := filepath.Abs(os.Args[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bin != abs {
+		t.Fatalf("fakeProxyBin=%q want %q", bin, abs)
+	}
+}
+
+func TestFakeHelperSubprocessCornerCases(t *testing.T) {
+	err := runFakeHelper(t, []string{"LLMENTARY_FAKE_EXIT=not-a-number"}).Run()
+	if got := exitStatus(err); got != 2 {
+		t.Fatalf("invalid FAKE_EXIT status=%d err=%v", got, err)
+	}
+
+	err = runFakeHelper(t, []string{"LLMENTARY_FAKE_EXIT=0"}).Run()
+	if err != nil {
+		t.Fatalf("FAKE_EXIT=0: %v", err)
+	}
+
+	err = runFakeHelper(t, []string{"LLMENTARY_FAKE_PROXY=1"}).Run()
+	if got := exitStatus(err); got != 2 {
+		t.Fatalf("proxy without --control status=%d err=%v", got, err)
+	}
+
+	err = runFakeHelper(t, []string{"LLMENTARY_FAKE_PROXY=1", "FAKE_HEALTH_STATUS=nope"}, "--control", "127.0.0.1:9").Run()
+	if got := exitStatus(err); got != 2 {
+		t.Fatalf("invalid FAKE_HEALTH_STATUS status=%d err=%v", got, err)
+	}
+}
+
+func TestFakeHealthUnauthorizedViaStart(t *testing.T) {
+	t.Setenv("LLMENTARY_FAKE_PROXY", "1")
+	p, err := Start(context.Background(),
+		WithBinary(fakeProxyBin()),
+		WithStartTimeout(2*time.Second),
+		WithStartControlToken("secret"),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = p.Stop() })
+
+	resp, err := http.Get(p.ControlURL + "/healthz")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated healthz=%d", resp.StatusCode)
+	}
+}
+
+func runFakeHelper(t *testing.T, extraEnv []string, args ...string) *exec.Cmd {
+	t.Helper()
+	cmd := exec.Command(fakeProxyBin(), args...)
+	cmd.Env = append(os.Environ(), extraEnv...)
+	return cmd
+}
+
+func exitStatus(err error) int {
+	if err == nil {
+		return 0
+	}
+	var ee *exec.ExitError
+	if errors.As(err, &ee) {
+		return ee.ExitCode()
+	}
+	return -1
 }
 
 type errString string
