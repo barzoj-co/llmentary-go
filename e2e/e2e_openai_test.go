@@ -766,6 +766,18 @@ func TestE2EExpectNoCallsAndEmptyIsolatedFrom(t *testing.T) {
 		t.Fatalf("A ExpectNoCalls failure:\n%s", joined)
 	}
 
+	failIso := &e2eRecorder{}
+	lmAFail := sessionOnProxy(failIso, proxy, llmentary.WithSessionID(lmA.SessionID()))
+	if lmAFail.Check(ctx).IsolatedFrom(lmB.SessionID()) {
+		t.Fatal("A IsolatedFrom never-created B should fail without AllowEmpty")
+	}
+	failIso.flush()
+	isoMsg := strings.Join(failIso.messages, "\n")
+	if !strings.Contains(isoMsg, "no calls recorded for session "+lmB.SessionID()) ||
+		!strings.Contains(isoMsg, "isolated_from needs calls on both sides") {
+		t.Fatalf("A IsolatedFrom never-created B:\n%s", isoMsg)
+	}
+
 	if !lmA.Expect(ctx, llmentary.AllowEmpty()).IsolatedFrom(lmB.SessionID()) {
 		t.Fatal("A IsolatedFrom never-used B should pass with AllowEmpty")
 	}
@@ -920,6 +932,46 @@ func TestE2ESummaryRequestOnlyOn401AndAbort(t *testing.T) {
 	}
 	if strings.Contains(sum, "status=0") || strings.Contains(sum, "http=0") {
 		t.Fatalf("abort summary should omit status=0:\n%s", sum)
+	}
+}
+
+func TestE2EIsolatedFromLaterCallTwoNewUserMessages(t *testing.T) {
+	apiKey := requireOpenAIKey(t)
+	proxy := startE2EProxy(t)
+	lmP := sessionOnProxy(t, proxy)
+	lmQ := sessionOnProxy(t, proxy)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	chatPath := func(lm *llmentary.Session, messages []openai.ChatCompletionMessageParamUnion) {
+		t.Helper()
+		oa := openai.NewClient(
+			option.WithAPIKey(apiKey),
+			option.WithBaseURL(lm.PathBaseURL("openai")),
+			option.WithMaxRetries(0),
+		)
+		if _, err := oa.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
+			Model:       e2eModel(),
+			Temperature: param.NewOpt(0.0),
+			Messages:    messages,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	open := "DOG-33 opening for " + lmP.SessionID() + ". Reply with the single word ok."
+	second := "DOG-33 second for " + lmP.SessionID() + ". Reply with the single word ok."
+	third := "DOG-33 third for " + lmP.SessionID() + ". Reply with the single word ok."
+	chatPath(lmP, []openai.ChatCompletionMessageParamUnion{openai.UserMessage(open)})
+	chatPath(lmP, []openai.ChatCompletionMessageParamUnion{
+		openai.UserMessage(open),
+		openai.UserMessage(second),
+		openai.UserMessage(third),
+	})
+	chatPath(lmQ, []openai.ChatCompletionMessageParamUnion{openai.UserMessage(second)})
+
+	if !lmP.Expect(ctx).IsolatedFrom(lmQ.SessionID()) {
+		t.Fatal("P introduced both later-call user messages; IsolatedFrom(Q) should pass")
 	}
 }
 
