@@ -151,6 +151,22 @@ system prompts and tool names are not compared).
 See [docs/go-client.md](docs/go-client.md) for the full session, query, and
 assertion API.
 
+## Negative tests: asserting zero LLM calls
+
+A session that never hit the model is a 404, not an empty trace. `Wait` /
+`Expect` stay strict (DOG-2: a bypassed proxy must not look clean). Opt in:
+
+```go
+lm.ExpectNoCalls(ctx)                                 // 404 passes; N calls fail with the summary
+lm.Expect(ctx, llmentary.AllowEmpty()).CallCount(0)   // empty Expectation
+lm.Expect(ctx, llmentary.AllowEmpty()).IsolatedFrom(other.SessionID())
+```
+
+`IsolatedFrom` on a never-created other session is the assertion
+`no calls recorded for session <id>` (not `SessionNotFound`); with
+`AllowEmpty` it passes. Client messages contain `known sessions:` at most
+once.
+
 ## Waiting for calls
 
 The proxy `/sessions/{id}/wait` endpoint reads `timeout`, `quiet`, and

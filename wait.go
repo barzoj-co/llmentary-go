@@ -74,9 +74,11 @@ func Since(m Mark) WaitOption {
 	}
 }
 
-// AllowEmpty lets NoErrors, ToolNotCalled, and IsolatedFrom pass when a
-// filter, Since, or compared session matches zero calls. It is not sent
-// to the proxy.
+// AllowEmpty lets Expect return an empty assertion instead of failing
+// when the session was never created (404), and lets NoErrors,
+// ToolNotCalled, CallCount(0), and IsolatedFrom pass when a filter,
+// Since, or compared session matches zero calls. It is not sent to the
+// proxy.
 func AllowEmpty() WaitOption {
 	return func(o *WaitOptions) { o.AllowEmpty = true }
 }

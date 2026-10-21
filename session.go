@@ -227,11 +227,19 @@ func (t sessionTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 
 func (lm *Session) Wait(ctx context.Context, opts ...WaitOption) Trace {
 	lm.t.Helper()
-	calls, err := lm.client.Wait(ctx, lm.sessionID, lm.quiet, lm.timeout, opts...)
+	tr, err := lm.waitTrace(ctx, opts...)
 	if err != nil {
 		lm.fatalControl("wait", err)
 	}
-	return Trace{SessionID: lm.sessionID, Calls: calls}
+	return tr
+}
+
+func (lm *Session) waitTrace(ctx context.Context, opts ...WaitOption) (Trace, error) {
+	calls, err := lm.client.Wait(ctx, lm.sessionID, lm.quiet, lm.timeout, opts...)
+	if err != nil {
+		return Trace{SessionID: lm.sessionID}, err
+	}
+	return Trace{SessionID: lm.sessionID, Calls: calls}, nil
 }
 
 func (lm *Session) Calls(ctx context.Context) Trace {
@@ -253,10 +261,51 @@ func (lm *Session) Check(ctx context.Context, opts ...WaitOption) *Assertions {
 	return lm.assertions(ctx, false, opts...)
 }
 
+// ExpectNoCalls waits with min_calls=0. A 404 session_not_found passes.
+// A session that recorded calls fails with the trace summary.
+func (lm *Session) ExpectNoCalls(ctx context.Context, opts ...WaitOption) bool {
+	lm.t.Helper()
+	return lm.noCalls(ctx, true, opts...)
+}
+
+// CheckNoCalls is ExpectNoCalls with t.Error instead of t.Fatal.
+func (lm *Session) CheckNoCalls(ctx context.Context, opts ...WaitOption) bool {
+	lm.t.Helper()
+	return lm.noCalls(ctx, false, opts...)
+}
+
+func (lm *Session) noCalls(ctx context.Context, fatal bool, opts ...WaitOption) bool {
+	lm.t.Helper()
+	tr, err := lm.waitTrace(ctx, opts...)
+	if err != nil {
+		if IsSessionNotFound(err) {
+			return true
+		}
+		lm.fatalControl("expect_no_calls", err)
+		return false
+	}
+	if len(tr.Calls) == 0 {
+		return true
+	}
+	msg := fmt.Sprintf("expected 0 LLM calls, got %d", len(tr.Calls))
+	if fatal {
+		lm.t.Fatalf("%s\n\nTrace summary:\n%s", msg, tr.Summary())
+		return false
+	}
+	lm.t.Error(msg + "\n\nTrace summary:\n" + tr.Summary())
+	return false
+}
+
 func (lm *Session) assertions(ctx context.Context, fatal bool, opts ...WaitOption) *Assertions {
 	lm.t.Helper()
 	wo := applyWaitOptions(opts)
-	full := lm.Wait(ctx, opts...)
+	full, err := lm.waitTrace(ctx, opts...)
+	if err != nil {
+		if wo.AllowEmpty && IsSessionNotFound(err) {
+			return &Assertions{t: lm.t, trace: full, sessionTrace: full, fatal: fatal, allowEmpty: true, client: lm.client, ctx: ctx}
+		}
+		lm.fatalControl("wait", err)
+	}
 	if wo.Since != nil {
 		q := full.Query().Since(*wo.Since)
 		wo.Since = nil
@@ -265,12 +314,11 @@ func (lm *Session) assertions(ctx context.Context, fatal bool, opts ...WaitOptio
 		a.ctx = ctx
 		return a
 	}
-	if len(full.Calls) == 0 {
-		a := &Assertions{t: lm.t, trace: full, sessionTrace: full, fatal: fatal, allowEmpty: wo.AllowEmpty, client: lm.client, ctx: ctx}
+	a := &Assertions{t: lm.t, trace: full, sessionTrace: full, fatal: fatal, allowEmpty: wo.AllowEmpty, client: lm.client, ctx: ctx}
+	if len(full.Calls) == 0 && !wo.AllowEmpty {
 		a.failNoCalls(lm.knownIDs(ctx))
-		return a
 	}
-	return &Assertions{t: lm.t, trace: full, sessionTrace: full, fatal: fatal, allowEmpty: wo.AllowEmpty, client: lm.client, ctx: ctx}
+	return a
 }
 
 // Mark snapshots the highest recorded seq so later Since(m) can scope a turn.

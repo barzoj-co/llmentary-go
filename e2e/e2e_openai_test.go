@@ -729,6 +729,48 @@ func TestE2ECallSeqPerSessionAndGlobalIDs(t *testing.T) {
 	}
 }
 
+func TestE2EExpectNoCallsAndEmptyIsolatedFrom(t *testing.T) {
+	apiKey := requireOpenAIKey(t)
+	proxy := startE2EProxy(t)
+	lmA := sessionOnProxy(t, proxy)
+	lmB := sessionOnProxy(t, proxy)
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+
+	oa := openai.NewClient(
+		option.WithAPIKey(apiKey),
+		option.WithBaseURL(lmA.PathBaseURL("openai")),
+		option.WithMaxRetries(0),
+	)
+	if _, err := oa.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
+		Model:       e2eModel(),
+		Temperature: param.NewOpt(0.0),
+		Messages: []openai.ChatCompletionMessageParamUnion{
+			openai.UserMessage("Reply with the single word alpha."),
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if !lmB.ExpectNoCalls(ctx) {
+		t.Fatal("session B made no calls")
+	}
+
+	failRec := &e2eRecorder{}
+	lmFail := sessionOnProxy(failRec, proxy, llmentary.WithSessionID(lmA.SessionID()))
+	if lmFail.CheckNoCalls(ctx) {
+		t.Fatal("session A made one call; CheckNoCalls should fail")
+	}
+	joined := strings.Join(failRec.messages, "\n")
+	if !strings.Contains(joined, "expected 0 LLM calls, got 1") || !strings.Contains(joined, "Trace summary:") {
+		t.Fatalf("A ExpectNoCalls failure:\n%s", joined)
+	}
+
+	if !lmA.Expect(ctx, llmentary.AllowEmpty()).IsolatedFrom(lmB.SessionID()) {
+		t.Fatal("A IsolatedFrom never-used B should pass with AllowEmpty")
+	}
+}
+
 func TestE2EIsolatedFromPathSessions(t *testing.T) {
 	apiKey := requireOpenAIKey(t)
 	proxy := startE2EProxy(t)
@@ -779,7 +821,7 @@ func startE2EProxy(t *testing.T) *llmentary.Proxy {
 	)
 }
 
-func sessionOnProxy(t *testing.T, proxy *llmentary.Proxy, opts ...llmentary.Option) *llmentary.Session {
+func sessionOnProxy(t testing.TB, proxy *llmentary.Proxy, opts ...llmentary.Option) *llmentary.Session {
 	t.Helper()
 	sessionOpts := []llmentary.Option{
 		llmentary.WithProxyURL(proxy.ProxyURL),
