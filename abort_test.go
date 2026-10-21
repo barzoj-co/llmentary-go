@@ -82,6 +82,64 @@ func TestCallAbortFieldsFromNewAndOldJSON(t *testing.T) {
 			t.Fatalf("normal call should not be aborted: %+v", call)
 		}
 	})
+
+	t.Run("done_close_is_not_abort", func(t *testing.T) {
+		var call Call
+		if err := json.Unmarshal([]byte(`{
+			"id":"call_done",
+			"seq":1,
+			"http_status":200,
+			"stream":true,
+			"normalized":{"finish_reason":"stop","output_text":"hi"}
+		}`), &call); err != nil {
+			t.Fatal(err)
+		}
+		if call.ClientAborted || call.Aborted() || call.AbortPhase != "" {
+			t.Fatalf("close after [DONE] is not an abort: %+v", call)
+		}
+		encoded, err := json.Marshal(call)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(encoded), "abort_phase") || strings.Contains(string(encoded), "client_aborted") {
+			t.Fatalf("abort fields must be omitted on a finished stream: %s", encoded)
+		}
+	})
+
+	t.Run("phase_omitted_when_not_aborted", func(t *testing.T) {
+		var call Call
+		if err := json.Unmarshal([]byte(`{
+			"id":"call_omit",
+			"seq":1,
+			"http_status":200,
+			"client_aborted":false,
+			"abort_phase":"after_headers",
+			"normalized":{"finish_reason":"stop"}
+		}`), &call); err != nil {
+			t.Fatal(err)
+		}
+		if call.Aborted() || call.AbortPhase != "" {
+			t.Fatalf("abort_phase must be omitted when not aborted: %+v", call)
+		}
+	})
+
+	t.Run("responses_completed_is_not_abort", func(t *testing.T) {
+		var call Call
+		if err := json.Unmarshal([]byte(`{
+			"id":"call_resp",
+			"seq":1,
+			"http_status":200,
+			"stream":true,
+			"api_family":"responses",
+			"sse_events":[{"event":"response.completed"}],
+			"normalized":{"finish_reason":"completed","raw":{"phase":"after_headers"}}
+		}`), &call); err != nil {
+			t.Fatal(err)
+		}
+		if call.ClientAborted || call.Aborted() || call.AbortPhase != "" {
+			t.Fatalf("close after a terminal Responses event is not an abort: %+v", call)
+		}
+	})
 }
 
 func TestAssertionsAborted(t *testing.T) {

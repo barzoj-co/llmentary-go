@@ -47,7 +47,8 @@ type Call struct {
 	// only set normalized.client_aborted; UnmarshalJSON copies that alias.
 	ClientAborted bool `json:"client_aborted,omitempty"`
 	// AbortPhase is before_headers or after_headers when ClientAborted.
-	// Empty on a normal call and on older proxies that only logged the phase.
+	// Omitted when the call is not aborted. A client close after [DONE]
+	// or a terminal Responses event is not an abort.
 	AbortPhase string     `json:"abort_phase,omitempty"`
 	Normalized Normalized `json:"normalized"`
 }
@@ -66,6 +67,10 @@ func (c *Call) UnmarshalJSON(data []byte) error {
 	*c = Call(raw)
 	if !c.ClientAborted && c.Normalized.ClientAborted {
 		c.ClientAborted = true
+	}
+	if !c.ClientAborted {
+		c.AbortPhase = ""
+		return nil
 	}
 	if c.AbortPhase == "" {
 		c.AbortPhase = abortPhaseFromNormalized(c.Normalized)

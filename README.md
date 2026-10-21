@@ -172,7 +172,8 @@ once.
 A client cancel is a typed `Call` field. Older proxies only set
 `normalized.client_aborted`; the client copies that alias onto
 `Call.ClientAborted`. `AbortPhase` is `before_headers` or `after_headers`
-when the proxy puts it on the wire (DOG-28); it is empty on v0.3.0.
+when the call was aborted; it is omitted otherwise. A client close after
+`[DONE]` or a terminal Responses event is not an abort.
 
 ```go
 trace := lm.Wait(ctx)
