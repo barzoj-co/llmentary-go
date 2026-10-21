@@ -151,7 +151,7 @@ system prompts and tool names are not compared).
 See [docs/go-client.md](docs/go-client.md) for the full session, query, and
 assertion API.
 
-## Negative tests: asserting zero LLM calls
+### Negative tests: asserting zero LLM calls
 
 A session that never hit the model is a 404, not an empty trace. `Wait` /
 `Expect` stay strict (DOG-2: a bypassed proxy must not look clean). Opt in:
