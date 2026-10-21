@@ -185,6 +185,54 @@ func TestTraceSpecViolationsAndSummary(t *testing.T) {
 	}
 }
 
+func TestSpecStatusLabelRequestOnly(t *testing.T) {
+	requestOnly := Call{Normalized: Normalized{
+		Validation:     &Validation{RequestChecked: true, ResponseChecked: false},
+		SpecViolations: &[]SpecViolation{},
+	}}
+	if got := requestOnly.SpecStatusLabel(); got != "request_only" {
+		t.Fatalf("request_only label=%q", got)
+	}
+
+	clean := loadSpecCall(t, "chatservice-run1-clean.json")
+	if got := clean.SpecStatusLabel(); got != "clean" {
+		t.Fatalf("clean label=%q", got)
+	}
+
+	absent := loadSpecCall(t, "not-checked.json")
+	if got := absent.SpecStatusLabel(); got != "not checked" {
+		t.Fatalf("absent label=%q", got)
+	}
+
+	skipped := Call{Normalized: Normalized{
+		Validation: &Validation{SkippedReason: "passthrough"},
+	}}
+	if got := skipped.SpecStatusLabel(); got != "skipped:passthrough" {
+		t.Fatalf("skipped label=%q", got)
+	}
+}
+
+func TestSummaryOmitsStatusZeroOnAbort(t *testing.T) {
+	trace := Trace{SessionID: "abort", Calls: []Call{{
+		ID:         "call_a",
+		Seq:        1,
+		HTTPStatus: 0,
+		Normalized: Normalized{
+			FinishReason:   "cancelled",
+			ClientAborted:  true,
+			Validation:     &Validation{RequestChecked: true, ResponseChecked: false},
+			SpecViolations: &[]SpecViolation{},
+		},
+	}}}
+	summary := trace.Summary()
+	if strings.Contains(summary, "status=0") || strings.Contains(summary, "http=0") {
+		t.Fatalf("abort summary should omit status=0:\n%s", summary)
+	}
+	if !strings.Contains(summary, "spec=request_only") || !strings.Contains(summary, "client_aborted") {
+		t.Fatalf("abort summary:\n%s", summary)
+	}
+}
+
 func TestProxyConfigUnmarshalUpstreams(t *testing.T) {
 	var cfg ProxyConfig
 	if err := json.Unmarshal([]byte(`{"version":"0.2.0","upstreams":{"openai":"https://api.openai.com/v1"}}`), &cfg); err != nil {

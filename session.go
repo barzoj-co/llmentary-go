@@ -367,7 +367,14 @@ func (tr Trace) Summary() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "session %s: %d call(s)\n", tr.SessionID, len(tr.Calls))
 	for _, call := range tr.Calls {
-		fmt.Fprintf(&b, "  #%d (%s) %s %s status=%d", call.Seq, call.ID, call.Provider, call.APIFamily, call.HTTPStatus)
+		fmt.Fprintf(&b, "  #%d (%s) %s %s", call.Seq, call.ID, call.Provider, call.APIFamily)
+		aborted := call.Normalized.ClientAborted
+		if call.HTTPStatus != 0 || !aborted {
+			fmt.Fprintf(&b, " status=%d", call.HTTPStatus)
+		}
+		if aborted {
+			b.WriteString(" client_aborted")
+		}
 		if finish := strings.TrimSpace(call.Normalized.FinishReason); finish != "" && !strings.EqualFold(finish, "unknown") {
 			fmt.Fprintf(&b, " finish=%s", finish)
 		}
