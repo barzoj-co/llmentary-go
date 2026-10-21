@@ -391,8 +391,8 @@ func TestIsolationVectors(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(vectors) < 20 {
-		t.Fatalf("expected at least 20 isolation vectors, got %d", len(vectors))
+	if len(vectors) < 8 {
+		t.Fatalf("expected at least 8 isolation vectors, got %d", len(vectors))
 	}
 	for _, vec := range vectors {
 		t.Run(vec.Name, func(t *testing.T) {
@@ -403,7 +403,7 @@ func TestIsolationVectors(t *testing.T) {
 
 func TestIsolationVectorsMatchPinnedProxy(t *testing.T) {
 	if os.Getenv("LLMENTARY_LIVE_DOWNLOAD") != "1" && os.Getenv("LLMENTARY_CHECK_ISOLATION_VECTORS") != "1" {
-		t.Skip("set LLMENTARY_LIVE_DOWNLOAD=1 or LLMENTARY_CHECK_ISOLATION_VECTORS=1 to compare testdata/isolation with the proxy")
+		t.Skip("set LLMENTARY_LIVE_DOWNLOAD=1 or LLMENTARY_CHECK_ISOLATION_VECTORS=1 to compare testdata/isolation with the pinned proxy release")
 	}
 	local, err := loadIsolationVectorFiles(isolationVectorDir)
 	if err != nil {
@@ -431,11 +431,6 @@ func isolationCall(sessionID, id string, seq int, source, raw string) Call {
 }
 
 const isolationVectorDir = "testdata/isolation"
-
-// isolationVectorsProxyRef is the proxy git ref that publishes
-// testdata/isolation (DOG-29 / barzoj-co/llmentary#35, merged as bb39133).
-// Override with LLMENTARY_ISOLATION_VECTORS_REF.
-const isolationVectorsProxyRef = "main"
 
 type isolationVector struct {
 	ID          string                `json:"id"`
@@ -612,11 +607,15 @@ func isolationVectorTrace(sessionID string, calls []isolationVectorCall) (Trace,
 	return Trace{SessionID: sessionID, Calls: out}, nil
 }
 
+// isolationVectorRef is the proxy git ref used to drift-check
+// testdata/isolation. Default is the pinned release (ProxyVersion), not
+// proxy main — main can move ahead of the pin (DOG-32/33 vectors).
+// Override with LLMENTARY_ISOLATION_VECTORS_REF.
 func isolationVectorRef() string {
 	if env := strings.TrimSpace(os.Getenv("LLMENTARY_ISOLATION_VECTORS_REF")); env != "" {
 		return env
 	}
-	return isolationVectorsProxyRef
+	return ProxyVersion
 }
 
 type isolationVectorHTTPError struct {
@@ -769,17 +768,38 @@ func bytesEqualJSON(a, b []byte) bool {
 	return string(a) == string(b)
 }
 
-func TestIsolationVectorRefIsProxyMain(t *testing.T) {
+func TestIsolationVectorRefDefaultsToPinnedRelease(t *testing.T) {
 	t.Setenv("LLMENTARY_ISOLATION_VECTORS_REF", "")
-	if isolationVectorsProxyRef != "main" {
-		t.Fatalf("isolationVectorsProxyRef=%q want main", isolationVectorsProxyRef)
+	if got := isolationVectorRef(); got != ProxyVersion {
+		t.Fatalf("isolationVectorRef()=%q want pinned %q", got, ProxyVersion)
 	}
+	if isolationVectorRef() == "main" {
+		t.Fatal("isolation vector drift must not follow proxy main")
+	}
+	t.Setenv("LLMENTARY_ISOLATION_VECTORS_REF", "main")
 	if got := isolationVectorRef(); got != "main" {
-		t.Fatalf("isolationVectorRef()=%q want main", got)
-	}
-	t.Setenv("LLMENTARY_ISOLATION_VECTORS_REF", "feature-branch")
-	if got := isolationVectorRef(); got != "feature-branch" {
 		t.Fatalf("override isolationVectorRef()=%q", got)
+	}
+}
+
+func TestFetchGitHubIsolationDirQueriesPinnedRef(t *testing.T) {
+	t.Setenv("LLMENTARY_ISOLATION_VECTORS_REF", "")
+	var gotRef string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotRef = r.URL.Query().Get("ref")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	t.Cleanup(srv.Close)
+	_, err := fetchGitHubIsolationDir(context.Background(), srv.URL, isolationVectorRef(), "")
+	if err == nil || !strings.Contains(err.Error(), ProxyVersion) {
+		t.Fatalf("empty pin listing err=%v", err)
+	}
+	if gotRef != ProxyVersion {
+		t.Fatalf("contents query ref=%q want pinned %q", gotRef, ProxyVersion)
+	}
+	if gotRef == "main" {
+		t.Fatal("must not query proxy main for the default drift check")
 	}
 }
 

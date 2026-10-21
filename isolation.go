@@ -157,8 +157,8 @@ func (a *Assertions) IsolatedFrom(otherSessionID string, opts ...IsolatedFromOpt
 			if !foreign {
 				continue
 			}
-			return a.fail("user text '%s' appears in session %s #%d (%s); also introduced by session %s #%d (%s)",
-				text, thisID, call.Seq, call.ID, hit.session, hit.seq, hit.callID)
+			return a.fail("user text '%s' from session %s #%d (%s) appears in session %s #%d (%s); also introduced by session %s #%d (%s)",
+				text, hit.session, hit.seq, hit.callID, thisID, call.Seq, call.ID, hit.session, hit.seq, hit.callID)
 		}
 	}
 	return true
