@@ -85,7 +85,7 @@ func TestDownloadPinnedProxyRelease(t *testing.T) {
 	if err != nil {
 		t.Fatalf("running downloaded binary: %v\n%s", err, out)
 	}
-	if !strings.Contains(gotVer, "llmentary 0.3.0") || !strings.Contains(gotVer, "b2dbd0d") {
+	if !strings.Contains(gotVer, "llmentary 0.3.0") || !strings.Contains(gotVer, "b2dbd0d") || !strings.Contains(gotVer, "go1.26.10") {
 		t.Fatalf("llmentary --version=%q want llmentary 0.3.0 (b2dbd0d..., go1.26.10)", gotVer)
 	}
 }
