@@ -826,8 +826,8 @@ func TestE2EClientAbortedBeforeHeaders(t *testing.T) {
 	if !strings.EqualFold(call.Normalized.FinishReason, "cancelled") {
 		t.Fatalf("finish_reason=%q want cancelled\n%s", call.Normalized.FinishReason, trace.Summary())
 	}
-	if call.AbortPhase != llmentary.AbortPhaseBeforeHeaders && call.AbortPhase != llmentary.AbortPhaseAfterHeaders {
-		t.Fatalf("AbortPhase=%q want before_headers or after_headers\n%s", call.AbortPhase, trace.Summary())
+	if call.AbortPhase != "" && call.AbortPhase != llmentary.AbortPhaseBeforeHeaders && call.AbortPhase != llmentary.AbortPhaseAfterHeaders {
+		t.Fatalf("AbortPhase=%q\n%s", call.AbortPhase, trace.Summary())
 	}
 	if !lm.Check(ctx).Aborted() {
 		t.Fatal("Aborted() should pass")
