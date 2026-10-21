@@ -33,15 +33,15 @@ func TestDefaultReleaseRepo(t *testing.T) {
 }
 
 func TestProxyVersion(t *testing.T) {
-	if ProxyVersion != "v0.1.0" {
-		t.Fatalf("ProxyVersion=%q want v0.1.0", ProxyVersion)
+	if ProxyVersion != "v0.2.0" {
+		t.Fatalf("ProxyVersion=%q want v0.2.0", ProxyVersion)
 	}
 	tag, version := normalizeReleaseVersion(ProxyVersion)
-	if tag != "v0.1.0" || version != "0.1.0" {
+	if tag != "v0.2.0" || version != "0.2.0" {
 		t.Fatalf("normalizeReleaseVersion(%q)=(%q, %q)", ProxyVersion, tag, version)
 	}
 	got := releaseArchiveName(version, "linux", "amd64")
-	if got != "llmentary_0.1.0_linux_amd64.tar.gz" {
+	if got != "llmentary_0.2.0_linux_amd64.tar.gz" {
 		t.Fatalf("releaseArchiveName=%q", got)
 	}
 }
@@ -76,30 +76,33 @@ func TestDownloadPinnedProxyRelease(t *testing.T) {
 	if info.Mode()&0o111 == 0 {
 		t.Fatalf("extracted binary is not executable: mode=%s", info.Mode())
 	}
-	helpCtx, helpCancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer helpCancel()
-	cmd := exec.CommandContext(helpCtx, path, "--help")
+	verCtx, verCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer verCancel()
+	cmd := exec.CommandContext(verCtx, path, "--version")
 	cmd.Env = []string{"PATH=" + os.Getenv("PATH")}
 	out, err := cmd.CombinedOutput()
-	t.Logf("llmentary --help: err=%v\n%s", err, out)
+	gotVer := strings.TrimSpace(string(out))
 	if err != nil {
 		t.Fatalf("running downloaded binary: %v\n%s", err, out)
+	}
+	if !strings.Contains(gotVer, "llmentary 0.2.0") || !strings.Contains(gotVer, "d3698347") {
+		t.Fatalf("llmentary --version=%q want llmentary 0.2.0 (d3698347...)", gotVer)
 	}
 }
 
 func TestReleaseArchiveName(t *testing.T) {
-	got := releaseArchiveName("0.1.0", "linux", "amd64")
-	want := "llmentary_0.1.0_linux_amd64.tar.gz"
+	got := releaseArchiveName("0.2.0", "linux", "amd64")
+	want := "llmentary_0.2.0_linux_amd64.tar.gz"
 	if got != want {
 		t.Fatalf("releaseArchiveName=%q want %q", got, want)
 	}
-	old := "llm-test-lab_0.1.0_linux_amd64.tar.gz"
+	old := "llm-test-lab_0.2.0_linux_amd64.tar.gz"
 	if got == old {
 		t.Fatal("asset matcher still uses llm-test-lab archive names")
 	}
 	sum := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 	if _, err := checksumForFile([]byte(sum+"  "+old+"\n"), got); err == nil {
-		t.Fatal("expected checksum lookup to reject llm-test-lab_0.1.0_linux_amd64.tar.gz")
+		t.Fatal("expected checksum lookup to reject llm-test-lab_0.2.0_linux_amd64.tar.gz")
 	}
 }
 

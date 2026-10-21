@@ -97,7 +97,8 @@ PR (project and patch are `informational: true`).
 
 Secrets stay off workflow- and job-level `env:`. `OPENAI_API_KEY` is injected
 only into the live `OpenAI e2e tests` step; `LLMTESTLAB_REPO_TOKEN` is only in
-the `Install pinned proxy release` step (private GitHub Release assets). The
+the `Install pinned proxy release` step (passed as `GH_TOKEN` for private
+GitHub Release assets; never printed or placed in a URL). The
 live `e2e` job uses the `openai-e2e` GitHub Actions environment. Maintainers
 approve that environment
 deployment on each pull request (and on `push` to `main`) before the paid

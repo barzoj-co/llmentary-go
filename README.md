@@ -21,7 +21,7 @@ go get github.com/barzoj-co/llmentary-go
 ```
 
 Install the proxy from [barzoj-co/llmentary](https://github.com/barzoj-co/llmentary)
-GitHub Releases, or `go install github.com/barzoj-co/llmentary/cmd/llmentary@latest`.
+GitHub Releases (`v0.2.0`), or `go install github.com/barzoj-co/llmentary/cmd/llmentary@v0.2.0`.
 Put it on your `PATH` as `llmentary`, or set `LLMENTARY_BIN`. Lookup details:
 [docs/binaries.md](docs/binaries.md).
 

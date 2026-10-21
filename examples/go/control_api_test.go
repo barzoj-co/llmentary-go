@@ -35,7 +35,7 @@ func TestListSessionsMinCallsAndNotFound(t *testing.T) {
 		t.Fatal(err)
 	}
 	if strings.TrimSpace(version) == "" {
-		t.Fatal("GET /config version is empty; need a proxy built from current main, not v0.1.0")
+		t.Fatal("GET /config version is empty; need proxy v0.2.0+")
 	}
 	t.Logf("proxy version %s", version)
 

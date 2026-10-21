@@ -52,7 +52,7 @@ func TestSpecViolationsAgainstProxy(t *testing.T) {
 	}
 	findings, checked := trace.Calls[0].SpecViolations()
 	if !checked {
-		t.Fatal("proxy did not record spec_violations; need a proxy built from current main, not bundled 0.1.0")
+		t.Fatal("proxy did not record spec_violations; need proxy v0.2.0+")
 	}
 	if len(findings) == 0 {
 		t.Fatal("expected a request violation for top-level foo")

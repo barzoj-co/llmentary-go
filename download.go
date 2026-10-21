@@ -30,15 +30,16 @@ const (
 	maxArchiveBytes      = 80 << 20
 	downloadUserAgent    = "llmentary-go"
 	// ProxyVersion is the barzoj-co/llmentary GitHub Release this client
-	// pins. Pass it to DownloadRelease unless you intentionally select
-	// another tag. The leading v matches the GitHub release tag.
-	ProxyVersion = "v0.1.0"
+	// pins (tag v0.2.0, commit d3698347ec0ac297a45fd531e4011b60b2039324).
+	// Pass it to DownloadRelease unless you intentionally select another
+	// tag. The leading v matches the GitHub release tag.
+	ProxyVersion = "v0.2.0"
 )
 
 // DownloadOptions selects a GitHub Release of barzoj-co/llmentary and
 // installs the proxy binary after verifying its checksum.
 type DownloadOptions struct {
-	// Version is a release tag such as v0.1.0. The leading v is optional.
+	// Version is a release tag such as v0.2.0. The leading v is optional.
 	// Callers should pass ProxyVersion unless they pin a different release.
 	Version string
 	// DestDir is the directory that will contain the extracted binary.

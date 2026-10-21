@@ -26,7 +26,7 @@ proxy, err := llmentary.Start(ctx,
 ## DownloadRelease
 
 `DownloadRelease` fetches a pinned GitHub Release of `barzoj-co/llmentary`
-(`ProxyVersion`, currently `v0.1.0`) and verifies `checksums.txt` before
+(`ProxyVersion`, currently `v0.2.0`) and verifies `checksums.txt` before
 extracting the `llmentary` binary.
 
 ```go
