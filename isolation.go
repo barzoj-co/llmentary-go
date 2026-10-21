@@ -73,8 +73,9 @@ func IgnoreTexts(texts ...string) IsolatedFromOption {
 //     is exact after trim, whitespace collapse, and Unicode casefold —
 //     never substring.
 //
-// Empty sessions fail unless AllowEmpty. System/developer prompts and
-// tool definitions are never compared.
+// Empty this session, or a never-created / empty other session, fails
+// unless AllowEmpty. System/developer prompts and tool definitions are
+// never compared.
 func (a *Assertions) IsolatedFrom(otherSessionID string, opts ...IsolatedFromOption) bool {
 	a.t.Helper()
 	var cfg isolatedFromConfig
@@ -123,6 +124,9 @@ func (a *Assertions) IsolatedFrom(otherSessionID string, opts ...IsolatedFromOpt
 		if _, dup := thisIDs[call.ID]; dup {
 			return a.fail("call id %s appears in sessions %s and %s", call.ID, thisID, otherSessionID)
 		}
+	}
+	if !a.allowEmpty && len(other.Calls) == 0 {
+		return a.fail("no calls recorded for session %s", otherSessionID)
 	}
 	ignore := isolationIgnoreSet(cfg.ignore)
 	minChars := cfg.minCharsOrDefault()

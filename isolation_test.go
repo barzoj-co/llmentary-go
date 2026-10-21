@@ -207,6 +207,29 @@ func TestIsolatedFromFixtures(t *testing.T) {
 		}
 	})
 
+	t.Run("empty_other_fails_unless_allow_empty", func(t *testing.T) {
+		empty := Trace{SessionID: "ghost"}
+		tb := &fakeTB{}
+		if bargeTrace.Query().Check(tb).IsolatedFrom("ghost", WithOtherTrace(empty)) {
+			t.Fatal("empty other session should fail")
+		}
+		joined := strings.Join(tb.messages, "\n")
+		if !strings.Contains(joined, "no calls recorded for session ghost") {
+			t.Fatalf("empty other message: %v", tb.messages)
+		}
+		if strings.Contains(joined, "SessionNotFound") {
+			t.Fatalf("should not leak SessionNotFound:\n%s", joined)
+		}
+
+		ok := &fakeTB{}
+		if !bargeTrace.Query().AllowEmpty().Check(ok).IsolatedFrom("ghost", WithOtherTrace(empty)) {
+			t.Fatalf("AllowEmpty should pass: %v", ok.messages)
+		}
+		if ok.failed {
+			t.Fatalf("AllowEmpty recorded errors: %v", ok.messages)
+		}
+	})
+
 	t.Run("shared_call_id", func(t *testing.T) {
 		dup := weather
 		dup.ID = "call_1"
