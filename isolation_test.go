@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -284,8 +285,7 @@ func TestIsolationVectorsMatchPinnedProxy(t *testing.T) {
 		t.Fatal(err)
 	}
 	if remote == nil {
-		t.Logf("proxy %s has no testdata/isolation yet; using DOG-29 text until the proxy docs PR lands", ProxyVersion)
-		return
+		t.Fatalf("proxy testdata/isolation not found at refs %v", isolationVectorRefs(ProxyVersion))
 	}
 	if err := diffIsolationVectorFiles(local, remote); err != nil {
 		t.Fatal(err)
@@ -303,6 +303,11 @@ func isolationCall(sessionID, id string, seq int, source, raw string) Call {
 }
 
 const isolationVectorDir = "testdata/isolation"
+
+// isolationVectorsProxyRef is the proxy DOG-29 branch that publishes
+// testdata/isolation/*.json and testdata/isolation/README.md
+// (barzoj-co/llmentary#35). Override with LLMENTARY_ISOLATION_VECTORS_REF.
+const isolationVectorsProxyRef = "cursor/dog-29-isolation-spec-f2b6"
 
 type isolationVector struct {
 	Name            string                `json:"name"`
@@ -365,6 +370,9 @@ func loadIsolationVectors(dir string) ([]isolationVector, error) {
 	}
 	names := make([]string, 0, len(files))
 	for name := range files {
+		if !strings.HasSuffix(name, ".json") {
+			continue
+		}
 		names = append(names, name)
 	}
 	sort.Strings(names)
@@ -389,7 +397,10 @@ func loadIsolationVectorFiles(dir string) (map[string][]byte, error) {
 	}
 	out := map[string][]byte{}
 	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+		if entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
+			continue
+		}
+		if !strings.HasSuffix(entry.Name(), ".json") && !strings.EqualFold(entry.Name(), "README.md") {
 			continue
 		}
 		data, err := os.ReadFile(filepath.Join(dir, entry.Name()))
@@ -460,10 +471,20 @@ func isolationVectorTrace(sessionID string, calls []isolationVectorCall) (Trace,
 	return Trace{SessionID: sessionID, Calls: out}, nil
 }
 
+func isolationVectorRefs(version string) []string {
+	if env := strings.TrimSpace(os.Getenv("LLMENTARY_ISOLATION_VECTORS_REF")); env != "" {
+		return []string{env}
+	}
+	refs := []string{isolationVectorsProxyRef}
+	if tag, _ := normalizeReleaseVersion(version); tag != "" && tag != isolationVectorsProxyRef {
+		refs = append(refs, tag)
+	}
+	return refs
+}
+
 func fetchProxyIsolationVectors(ctx context.Context, version string) (map[string][]byte, error) {
 	token := firstNonEmpty(os.Getenv("LLMENTARY_GITHUB_TOKEN"), os.Getenv("GH_TOKEN"), os.Getenv("GITHUB_TOKEN"), os.Getenv("LLMTESTLAB_REPO_TOKEN"))
-	tag, _ := normalizeReleaseVersion(version)
-	for _, ref := range []string{tag} {
+	for _, ref := range isolationVectorRefs(version) {
 		files, missing, err := fetchGitHubIsolationDir(ctx, ref, token)
 		if err != nil {
 			return nil, err
@@ -478,7 +499,7 @@ func fetchProxyIsolationVectors(ctx context.Context, version string) (map[string
 
 func fetchGitHubIsolationDir(ctx context.Context, ref, token string) (map[string][]byte, bool, error) {
 	apiRoot := strings.TrimRight(defaultGitHubAPIRoot, "/")
-	listURL := apiRoot + "/repos/" + defaultReleaseRepo + "/contents/testdata/isolation?ref=" + ref
+	listURL := apiRoot + "/repos/" + defaultReleaseRepo + "/contents/testdata/isolation?ref=" + url.QueryEscape(ref)
 	body, err := httpGetBytesAccept(ctx, http.DefaultClient, listURL, token, 1<<20, "application/vnd.github+json")
 	if err != nil {
 		if strings.Contains(err.Error(), "status=404") {
@@ -496,7 +517,10 @@ func fetchGitHubIsolationDir(ctx context.Context, ref, token string) (map[string
 	}
 	out := map[string][]byte{}
 	for _, entry := range entries {
-		if entry.Type != "file" || !strings.HasSuffix(entry.Name, ".json") {
+		if entry.Type != "file" || strings.HasPrefix(entry.Name, ".") {
+			continue
+		}
+		if !strings.HasSuffix(entry.Name, ".json") && !strings.EqualFold(entry.Name, "README.md") {
 			continue
 		}
 		if entry.DownloadURL == "" {
@@ -531,10 +555,26 @@ func diffIsolationVectorFiles(local, remote map[string][]byte) error {
 			changed = append(changed, name)
 		}
 	}
+	sort.Strings(missing)
+	sort.Strings(extra)
+	sort.Strings(changed)
 	if len(missing) == 0 && len(extra) == 0 && len(changed) == 0 {
 		return nil
 	}
-	return fmt.Errorf("vendored testdata/isolation drifted from the proxy copy (missing=%v extra=%v changed=%v)", missing, extra, changed)
+	var b strings.Builder
+	fmt.Fprintf(&b, "vendored testdata/isolation drifted from the proxy copy (missing=%v extra=%v changed=%v)\n", missing, extra, changed)
+	names := make([]string, 0, len(remote))
+	for name := range remote {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		fmt.Fprintf(&b, "\n--- proxy testdata/isolation/%s ---\n%s", name, remote[name])
+		if !strings.HasSuffix(string(remote[name]), "\n") {
+			b.WriteByte('\n')
+		}
+	}
+	return fmt.Errorf("%s", b.String())
 }
 
 func bytesEqualJSON(a, b []byte) bool {
