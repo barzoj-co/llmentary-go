@@ -6,8 +6,9 @@ import (
 	"context"
 	"sort"
 	"strings"
-	"unicode"
 	"unicode/utf8"
+
+	"golang.org/x/text/cases"
 )
 
 const defaultIsolationMinChars = 8
@@ -288,15 +289,5 @@ func keepIsolationText(key string, minChars int, ignore map[string]struct{}) boo
 
 func normalizeIsolationText(s string) string {
 	s = strings.Join(strings.Fields(strings.TrimSpace(s)), " ")
-	var b strings.Builder
-	b.Grow(len(s))
-	for _, r := range s {
-		switch r {
-		case 'ß', 'ẞ':
-			b.WriteString("ss")
-		default:
-			b.WriteRune(unicode.ToLower(r))
-		}
-	}
-	return b.String()
+	return cases.Fold().String(s)
 }

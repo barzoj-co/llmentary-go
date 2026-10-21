@@ -35,6 +35,19 @@ func TestCallSeqFromWireAndSummaryShowsGlobalID(t *testing.T) {
 	}
 }
 
+func TestNormalizeIsolationTextCasefold(t *testing.T) {
+	strasse := normalizeIsolationText("DIE STRASSE IST NASS HEUTE")
+	eszett := normalizeIsolationText("Die Straße ist nass heute")
+	if strasse == "" || strasse != eszett {
+		t.Fatalf("eszett fold: %q vs %q", strasse, eszett)
+	}
+	capital := normalizeIsolationText("replay \u039f\u0394\u039f\u03a3")    // ΟΔΟΣ
+	finalSigma := normalizeIsolationText("replay \u03bf\u03b4\u03bf\u03c2") // οδος
+	if capital == "" || capital != finalSigma {
+		t.Fatalf("greek sigma fold: %q vs %q", capital, finalSigma)
+	}
+}
+
 func TestUserTextsChatAndResponses(t *testing.T) {
 	chat := Call{RawRequest: []byte(`{
 		"messages":[
