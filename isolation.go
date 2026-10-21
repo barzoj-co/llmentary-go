@@ -6,6 +6,7 @@ import (
 	"context"
 	"sort"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -67,9 +68,10 @@ func IgnoreTexts(texts ...string) IsolatedFromOption {
 //  1. every call's session_id is this session (and the other trace matches);
 //  2. no call id appears in both sessions;
 //  3. no foreign user turn: a user-role message in this request that this
-//     session never sent (last user message of each of its calls) but the
-//     other session did. Comparison is exact after trim, whitespace
-//     collapse, and casefold — never substring.
+//     session never introduced (last user turn of each call, excluding
+//     inbound history already seen) but the other session did. Comparison
+//     is exact after trim, whitespace collapse, and Unicode casefold —
+//     never substring.
 //
 // Empty sessions fail unless AllowEmpty. System/developer prompts and
 // tool definitions are never compared.
@@ -87,7 +89,7 @@ func (a *Assertions) IsolatedFrom(otherSessionID string, opts ...IsolatedFromOpt
 	if !ok {
 		return false
 	}
-	if !a.requireIsolationCalls(thisID, otherSessionID, this, other.Calls) {
+	if !a.requireIsolationCalls(thisID, this) {
 		return false
 	}
 	for _, call := range this {
@@ -126,7 +128,12 @@ func (a *Assertions) IsolatedFrom(otherSessionID string, opts ...IsolatedFromOpt
 	minChars := cfg.minCharsOrDefault()
 	sent := this
 	if len(a.sessionTrace.Calls) > 0 {
-		sent = a.sessionTrace.Calls
+		sent = make([]Call, 0, len(a.sessionTrace.Calls))
+		for _, call := range a.sessionTrace.Calls {
+			if call.SessionID == "" || call.SessionID == thisID {
+				sent = append(sent, call)
+			}
+		}
 	}
 	thisSent := introducedUserTurns(thisID, sent, minChars, ignore)
 	otherSent := introducedUserTurns(otherSessionID, other.Calls, minChars, ignore)
@@ -143,7 +150,7 @@ func (a *Assertions) IsolatedFrom(otherSessionID string, opts ...IsolatedFromOpt
 			if !foreign {
 				continue
 			}
-			return a.fail("user text %q from session %s #%d (%s) appears in session %s #%d (%s)",
+			return a.fail("user text '%s' from session %s #%d (%s) appears in session %s #%d (%s)",
 				text, hit.session, hit.seq, hit.callID, thisID, call.Seq, call.ID)
 		}
 	}
@@ -195,16 +202,13 @@ func (a *Assertions) otherIsolationTrace(otherSessionID string, supplied *Trace)
 	return Trace{SessionID: otherSessionID, Calls: calls}, true
 }
 
-func (a *Assertions) requireIsolationCalls(thisID, otherID string, this, other []Call) bool {
+func (a *Assertions) requireIsolationCalls(thisID string, this []Call) bool {
 	a.t.Helper()
 	if a.allowEmpty {
 		return true
 	}
 	if len(this) == 0 {
 		return a.fail("no calls recorded for session %s", thisID)
-	}
-	if len(other) == 0 {
-		return a.fail("no calls recorded for session %s", otherID)
 	}
 	return true
 }
@@ -219,15 +223,24 @@ type isolationTurn struct {
 func introducedUserTurns(sessionID string, calls []Call, minChars int, ignore map[string]struct{}) map[string]isolationTurn {
 	ordered := append([]Call(nil), calls...)
 	sort.SliceStable(ordered, func(i, j int) bool { return ordered[i].Seq < ordered[j].Seq })
+	seenHistory := map[string]struct{}{}
 	out := map[string]isolationTurn{}
 	for _, call := range ordered {
 		texts := call.UserTexts()
 		if len(texts) == 0 {
 			continue
 		}
+		for _, text := range texts[:len(texts)-1] {
+			if key := normalizeIsolationText(text); key != "" {
+				seenHistory[key] = struct{}{}
+			}
+		}
 		text := texts[len(texts)-1]
 		key := normalizeIsolationText(text)
 		if !keepIsolationText(key, minChars, ignore) {
+			continue
+		}
+		if _, history := seenHistory[key]; history {
 			continue
 		}
 		if _, exists := out[key]; exists {
@@ -270,5 +283,16 @@ func keepIsolationText(key string, minChars int, ignore map[string]struct{}) boo
 }
 
 func normalizeIsolationText(s string) string {
-	return strings.ToLower(strings.Join(strings.Fields(strings.TrimSpace(s)), " "))
+	s = strings.Join(strings.Fields(strings.TrimSpace(s)), " ")
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		switch r {
+		case 'ß', 'ẞ':
+			b.WriteString("ss")
+		default:
+			b.WriteRune(unicode.ToLower(r))
+		}
+	}
+	return b.String()
 }

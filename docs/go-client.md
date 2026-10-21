@@ -209,10 +209,11 @@ lm.Expect(ctx).IsolatedFrom(other.SessionID(), llmentary.MinChars(8), llmentary.
 1. every call's `session_id` is this session;
 2. no call id appears in both sessions;
 3. no **foreign** user turn: a user-role message in this request that this
-   session never sent (the last user message of each of its calls) but the
-   other session did. Comparison is exact after trim, whitespace collapse,
-   and casefold — never substring. Equal texts both sessions sent themselves
-   are not a leak. Texts shorter than `min_chars` (default 8) are ignored.
+   session never introduced (the last user message of each call, excluding
+   inbound history already seen) but the other session did. Comparison is
+   exact after trim, whitespace collapse, and Unicode casefold — never
+   substring. Equal texts both sessions sent themselves are not a leak.
+   Texts shorter than `min_chars` (default 8) are ignored.
 
 System/developer prompts and tool definitions are never compared. An empty
 session fails unless `AllowEmpty`. The same canned question in two parallel

@@ -4,6 +4,7 @@ package llmentary
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -149,8 +150,7 @@ func TestIsolatedFromFixtures(t *testing.T) {
 		}
 		joined := strings.Join(tb.messages, "\n")
 		for _, want := range []string{
-			"user text",
-			"What is my biological age?",
+			"user text 'What is my biological age?'",
 			"#1 (call_a)",
 			"#1 (call_b)",
 			"a",
@@ -218,6 +218,23 @@ func TestIsolatedFromFixtures(t *testing.T) {
 		joined := strings.Join(tb.messages, "\n")
 		if !strings.Contains(joined, "call id call_1 appears in sessions barge and weather") {
 			t.Fatalf("shared id message:\n%s", joined)
+		}
+	})
+
+	t.Run("foreign_session_trace_calls_do_not_count_as_sent", func(t *testing.T) {
+		own := isolationCall("a", "call_a", 2, "", `{
+			"messages":[
+				{"role":"user","content":"What is my biological age?"},
+				{"role":"assistant","content":"42"},
+				{"role":"user","content":"And what about my BMI?"}
+			]
+		}`)
+		foreign := isolationCall("other", "call_foreign", 1, "", `{"messages":[{"role":"user","content":"What is my biological age?"}]}`)
+		y := isolationCall("b", "call_b", 1, "", `{"messages":[{"role":"user","content":"What is my biological age?"}]}`)
+		full := Trace{SessionID: "a", Calls: []Call{foreign, own}}
+		tb := &fakeTB{}
+		if full.Query().Since(Mark{Seq: 1}).Check(tb).IsolatedFrom("b", WithOtherTrace(Trace{SessionID: "b", Calls: []Call{y}})) {
+			t.Fatal("foreign sessionTrace call must not mark Y's text as this session's own")
 		}
 	})
 
@@ -310,16 +327,25 @@ const isolationVectorDir = "testdata/isolation"
 const isolationVectorsProxyRef = "cursor/dog-29-isolation-spec-f2b6"
 
 type isolationVector struct {
-	Name            string                `json:"name"`
-	Expect          string                `json:"expect"`
-	ThisSession     string                `json:"this_session"`
-	OtherSession    string                `json:"other_session"`
-	AllowEmpty      bool                  `json:"allow_empty"`
-	MinChars        *int                  `json:"min_chars"`
-	IgnoreTexts     []string              `json:"ignore_texts"`
-	MessageContains []string              `json:"message_contains"`
-	This            []isolationVectorCall `json:"this"`
-	Other           []isolationVectorCall `json:"other"`
+	ID          string                `json:"id"`
+	Name        string                `json:"name"`
+	Description string                `json:"description"`
+	AllowEmpty  bool                  `json:"allow_empty"`
+	MinChars    *int                  `json:"min_chars"`
+	IgnoreTexts []string              `json:"ignore_texts"`
+	X           isolationVectorSide   `json:"x"`
+	Y           isolationVectorSide   `json:"y"`
+	Expect      isolationVectorExpect `json:"expect"`
+}
+
+type isolationVectorSide struct {
+	ID    string                `json:"id"`
+	Calls []isolationVectorCall `json:"calls"`
+}
+
+type isolationVectorExpect struct {
+	Isolated        *bool    `json:"isolated"`
+	MessageContains []string `json:"message_contains"`
 }
 
 type isolationVectorCall struct {
@@ -355,6 +381,9 @@ func isolationRawRequest(raw json.RawMessage) ([]byte, error) {
 	}
 	var asString string
 	if err := json.Unmarshal(raw, &asString); err == nil {
+		if decoded, decErr := base64.StdEncoding.DecodeString(asString); decErr == nil && json.Valid(decoded) {
+			return decoded, nil
+		}
 		return []byte(asString), nil
 	}
 	if json.Valid(raw) {
@@ -381,6 +410,9 @@ func loadIsolationVectors(dir string) ([]isolationVector, error) {
 		var vec isolationVector
 		if err := json.Unmarshal(files[name], &vec); err != nil {
 			return nil, fmt.Errorf("%s: %w", name, err)
+		}
+		if vec.Name == "" {
+			vec.Name = vec.ID
 		}
 		if vec.Name == "" {
 			vec.Name = strings.TrimSuffix(name, ".json")
@@ -417,11 +449,11 @@ func loadIsolationVectorFiles(dir string) (map[string][]byte, error) {
 
 func runIsolationVector(t *testing.T, vec isolationVector) {
 	t.Helper()
-	this, err := isolationVectorTrace(vec.ThisSession, vec.This)
+	this, err := isolationVectorTrace(vec.X.ID, vec.X.Calls)
 	if err != nil {
 		t.Fatal(err)
 	}
-	other, err := isolationVectorTrace(vec.OtherSession, vec.Other)
+	other, err := isolationVectorTrace(vec.Y.ID, vec.Y.Calls)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -438,24 +470,22 @@ func runIsolationVector(t *testing.T, vec isolationVector) {
 	if len(vec.IgnoreTexts) > 0 {
 		opts = append(opts, IgnoreTexts(vec.IgnoreTexts...))
 	}
-	ok := q.Check(tb).IsolatedFrom(vec.OtherSession, opts...)
-	switch strings.ToLower(vec.Expect) {
-	case "pass":
+	ok := q.Check(tb).IsolatedFrom(vec.Y.ID, opts...)
+	wantIsolated := vec.Expect.Isolated == nil || *vec.Expect.Isolated
+	if wantIsolated {
 		if !ok || tb.failed {
-			t.Fatalf("want pass, got fail: %v", tb.messages)
+			t.Fatalf("want isolated, got fail: %v", tb.messages)
 		}
-	case "fail":
-		if ok {
-			t.Fatal("want fail, got pass")
+		return
+	}
+	if ok {
+		t.Fatal("want leak, got isolated")
+	}
+	joined := strings.Join(tb.messages, "\n")
+	for _, want := range vec.Expect.MessageContains {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("missing %q in:\n%s", want, joined)
 		}
-		joined := strings.Join(tb.messages, "\n")
-		for _, want := range vec.MessageContains {
-			if !strings.Contains(joined, want) {
-				t.Fatalf("missing %q in:\n%s", want, joined)
-			}
-		}
-	default:
-		t.Fatalf("unknown expect %q", vec.Expect)
 	}
 }
 
