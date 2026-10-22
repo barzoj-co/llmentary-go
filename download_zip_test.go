@@ -130,9 +130,13 @@ func TestExtractZipSkipsTraversalAndMissingBinary(t *testing.T) {
 }
 
 func TestReleaseAssetURLAndRedactedMalformed(t *testing.T) {
-	got := releaseAssetURL("", "barzoj-co/llmentary", "v0.4.0", "checksums.txt")
-	if got != "https://github.com/barzoj-co/llmentary/releases/download/v0.4.0/checksums.txt" {
-		t.Fatalf("public asset URL=%q", got)
+	got := releaseAssetURL("", defaultReleaseRepo, ProxyVersion, checksumsName)
+	want := "https://github.com/" + defaultReleaseRepo + "/releases/download/" + ProxyVersion + "/" + checksumsName
+	if got != want {
+		t.Fatalf("public asset URL=%q want %q", got, want)
+	}
+	if strings.Contains(got, "v0.4.0") {
+		t.Fatalf("public asset URL still names previous pin: %q", got)
 	}
 	leaked := redactedURL("not a url?token=secret")
 	if strings.Contains(leaked, "token=secret") {
