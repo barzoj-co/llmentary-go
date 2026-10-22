@@ -975,6 +975,198 @@ func TestE2EIsolatedFromLaterCallTwoNewUserMessages(t *testing.T) {
 	}
 }
 
+func TestE2EIsolatedFromSeesLeakSourceStillStreaming(t *testing.T) {
+	apiKey := requireOpenAIKey(t)
+	proxy := startE2EProxy(t)
+	lmY := sessionOnProxy(t, proxy)
+	lmX := sessionOnProxy(t, proxy)
+	nonce := lmY.SessionID()
+	secret := "Y follow-up that X must never see (" + nonce + "). Continue with a long numbered list."
+	open := "Y opening question (" + nonce + "). Reply with the single word ok."
+	xAsk := "X asks its own question (" + nonce + "). Reply with the single word ok."
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	oaY := openai.NewClient(
+		option.WithAPIKey(apiKey),
+		option.WithBaseURL(lmY.PathBaseURL("openai")),
+		option.WithMaxRetries(0),
+	)
+	if _, err := oaY.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
+		Model:       e2eModel(),
+		Temperature: param.NewOpt(0.0),
+		Messages:    []openai.ChatCompletionMessageParamUnion{openai.UserMessage(open)},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	started := make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		body := []byte(`{
+			"model":` + strconv.Quote(e2eModel()) + `,
+			"messages":[{"role":"user","content":` + strconv.Quote(secret) + `}],
+			"stream":true,
+			"temperature":0
+		}`)
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, lmY.OpenAIBaseURL("openai")+"/chat/completions", bytes.NewReader(body))
+		if err != nil {
+			done <- err
+			return
+		}
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+		req.Header.Set("Content-Type", "application/json")
+		key, value := lmY.Header()
+		req.Header.Set(key, value)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			done <- err
+			return
+		}
+		defer func() { _ = resp.Body.Close() }()
+		buf := make([]byte, 64)
+		if _, err := resp.Body.Read(buf); err != nil && err != io.EOF {
+			done <- err
+			return
+		}
+		close(started)
+		time.Sleep(1500 * time.Millisecond)
+		_, _ = io.Copy(io.Discard, resp.Body)
+		done <- nil
+	}()
+	select {
+	case <-started:
+	case err := <-done:
+		t.Fatalf("Y stream ended before first chunk: %v", err)
+	case <-time.After(20 * time.Second):
+		t.Fatal("Y stream never produced a chunk")
+	}
+
+	oaX := openai.NewClient(
+		option.WithAPIKey(apiKey),
+		option.WithBaseURL(lmX.PathBaseURL("openai")),
+		option.WithMaxRetries(0),
+	)
+	if _, err := oaX.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
+		Model:       e2eModel(),
+		Temperature: param.NewOpt(0.0),
+		Messages: []openai.ChatCompletionMessageParamUnion{
+			openai.UserMessage(secret),
+			openai.AssistantMessage("ok"),
+			openai.UserMessage(xAsk),
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := &e2eRecorder{}
+	lmFail := sessionOnProxy(rec, proxy, llmentary.WithSessionID(lmX.SessionID()))
+	if lmFail.Check(ctx).IsolatedFrom(lmY.SessionID()) {
+		t.Fatal("IsolatedFrom should wait for Y's in-flight call and fail as a leak")
+	}
+	rec.flush()
+	joined := strings.Join(rec.messages, "\n")
+	for _, want := range []string{secret, "also introduced by", lmY.SessionID(), lmX.SessionID()} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("streaming leak IsolatedFrom missing %q:\n%s", want, joined)
+		}
+	}
+	if err := <-done; err != nil {
+		t.Fatalf("Y stream: %v", err)
+	}
+}
+
+func TestE2EIsolatedFromOtherInFlightTimeout(t *testing.T) {
+	apiKey := requireOpenAIKey(t)
+	proxy := startE2EProxy(t)
+	lmY := sessionOnProxy(t, proxy, llmentary.WithWait(50*time.Millisecond, 400*time.Millisecond))
+	lmX := sessionOnProxy(t, proxy, llmentary.WithWait(50*time.Millisecond, 400*time.Millisecond))
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+
+	reqCtx, reqCancel := context.WithCancel(context.Background())
+	defer reqCancel()
+	started := make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		body := []byte(`{
+			"model":` + strconv.Quote(e2eModel()) + `,
+			"messages":[{"role":"user","content":"Write a 400-word story about a barge meeting. Start immediately."}],
+			"stream":true,
+			"temperature":0
+		}`)
+		req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, lmY.OpenAIBaseURL("openai")+"/chat/completions", bytes.NewReader(body))
+		if err != nil {
+			done <- err
+			return
+		}
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+		req.Header.Set("Content-Type", "application/json")
+		key, value := lmY.Header()
+		req.Header.Set(key, value)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			done <- err
+			return
+		}
+		defer func() { _ = resp.Body.Close() }()
+		buf := make([]byte, 64)
+		if _, err := resp.Body.Read(buf); err != nil && err != io.EOF {
+			done <- err
+			return
+		}
+		close(started)
+		<-reqCtx.Done()
+		_, _ = io.Copy(io.Discard, resp.Body)
+		done <- nil
+	}()
+	select {
+	case <-started:
+	case err := <-done:
+		t.Fatalf("Y stream ended before first chunk: %v", err)
+	case <-time.After(20 * time.Second):
+		t.Fatal("Y stream never produced a chunk")
+	}
+
+	oaX := openai.NewClient(
+		option.WithAPIKey(apiKey),
+		option.WithBaseURL(lmX.PathBaseURL("openai")),
+		option.WithMaxRetries(0),
+	)
+	if _, err := oaX.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
+		Model:       e2eModel(),
+		Temperature: param.NewOpt(0.0),
+		Messages:    []openai.ChatCompletionMessageParamUnion{openai.UserMessage("Reply with the single word alpha.")},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := &e2eRecorder{}
+	lmFail := sessionOnProxy(rec, proxy, llmentary.WithSessionID(lmX.SessionID()), llmentary.WithWait(50*time.Millisecond, 400*time.Millisecond))
+	if lmFail.Check(ctx).IsolatedFrom(lmY.SessionID()) {
+		t.Fatal("IsolatedFrom should fail while Y is only in flight")
+	}
+	joined := strings.Join(rec.messages, "\n")
+	if !strings.Contains(joined, "wait timed out on session "+lmY.SessionID()) ||
+		!strings.Contains(joined, "still in flight") {
+		t.Fatalf("other in-flight timeout:\n%s", joined)
+	}
+	if strings.Contains(joined, "no calls recorded") {
+		t.Fatalf("must not look empty:\n%s", joined)
+	}
+
+	ok := &e2eRecorder{}
+	lmOK := sessionOnProxy(ok, proxy, llmentary.WithSessionID(lmX.SessionID()), llmentary.WithWait(50*time.Millisecond, 400*time.Millisecond))
+	if !lmOK.Check(ctx, llmentary.AllowEmpty()).IsolatedFrom(lmY.SessionID()) {
+		t.Fatalf("AllowEmpty should pass with 0 settled on Y: %v", ok.messages)
+	}
+	rec.flush()
+	ok.flush()
+	reqCancel()
+	<-done
+}
+
 func TestE2EIsolatedFromPathSessions(t *testing.T) {
 	apiKey := requireOpenAIKey(t)
 	proxy := startE2EProxy(t)

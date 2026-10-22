@@ -70,11 +70,13 @@ func IsWaitTimeout(err error) bool {
 
 // WaitTimeoutError is a 504 wait_timeout from /sessions/{id}/wait.
 type WaitTimeoutError struct {
-	SessionID string
-	Timeout   time.Duration
-	Calls     []Call
-	CallsSeen int
-	MinCalls  int
+	SessionID   string
+	Timeout     time.Duration
+	Calls       []Call
+	CallsSeen   int
+	MinCalls    int
+	Active      int
+	ActiveKnown bool
 }
 
 func (e *WaitTimeoutError) Error() string {
@@ -89,8 +91,12 @@ func (e *WaitTimeoutError) Error() string {
 	if timeout <= 0 {
 		timeout = DefaultWaitTimeout
 	}
-	msg := fmt.Sprintf("wait timed out after %s on session %s (%d calls so far, still active: %d). Raise %s if the graph needs more time",
-		formatWaitDuration(timeout), e.SessionID, n, countActiveCalls(e.Calls), EnvWaitTimeout)
+	soFar := fmt.Sprintf("%d calls so far", n)
+	if e.ActiveKnown {
+		soFar += fmt.Sprintf(", still active: %d", e.Active)
+	}
+	msg := fmt.Sprintf("wait timed out after %s on session %s (%s). Raise %s if the graph needs more time",
+		formatWaitDuration(timeout), e.SessionID, soFar, EnvWaitTimeout)
 	if e.MinCalls > 0 {
 		msg += fmt.Sprintf(" (min_calls=%d)", e.MinCalls)
 	}

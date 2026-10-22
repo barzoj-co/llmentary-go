@@ -145,7 +145,9 @@ Use `llmentary.AllowEmpty()` only when the test intends an empty match.
 1-based within the session. `Summary()` prints `#<seq> (<id>)`.
 
 Prove two path-prefix sessions stayed apart with
-`lm.Expect(ctx).IsolatedFrom(other.SessionID())`. Matching follows the
+`lm.Expect(ctx).IsolatedFrom(other.SessionID())`. `IsolatedFrom` waits
+on the other session with the same quiet/timeout as `Expect` (a
+pre-fetched `WithOtherTrace` is used as given). Matching follows the
 [isolation spec](https://github.com/barzoj-co/llmentary/blob/main/docs/isolation-spec.md):
 `session_id` ownership, no shared call ids, and no **foreign** user turn
 (exact normalized match of a user message this session never introduced).
@@ -170,9 +172,11 @@ lm.Expect(ctx, llmentary.AllowEmpty()).IsolatedFrom(other.SessionID())
 
 `IsolatedFrom` on a never-created or empty other session fails with
 `no calls recorded for session <id> (isolated_from needs calls on both
-sides)` (not `SessionNotFound`); with `AllowEmpty` it passes. Do not use
-`IsolatedFrom` against an unused session without that opt-in. Client
-messages contain `known sessions:` at most once.
+sides)` (not `SessionNotFound`); with `AllowEmpty` it passes. A wait
+timeout on the other side that leaves only in-flight calls names that
+state instead of looking empty. Do not use `IsolatedFrom` against an
+unused session without that opt-in. Client messages contain
+`known sessions:` at most once.
 
 ### Testing interruptions / barge-in
 

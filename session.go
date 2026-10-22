@@ -121,8 +121,9 @@ func WithSessionHTTPClient(client *http.Client) Option {
 	return func(c *sessionConfig) { c.httpClient = client }
 }
 
-// WithWait sets the quiet period and timeout used by Wait, Expect, and Check.
-// It overrides LLMENTARY_WAIT_QUIET / LLMENTARY_WAIT_TIMEOUT for this session.
+// WithWait sets the quiet period and timeout used by Wait, Expect, Check,
+// and IsolatedFrom's wait on the other session. It overrides
+// LLMENTARY_WAIT_QUIET / LLMENTARY_WAIT_TIMEOUT for this session.
 func WithWait(quiet, timeout time.Duration) Option {
 	return func(c *sessionConfig) {
 		c.quiet = quiet
@@ -302,7 +303,9 @@ func (lm *Session) assertions(ctx context.Context, fatal bool, opts ...WaitOptio
 	full, err := lm.waitTrace(ctx, opts...)
 	if err != nil {
 		if wo.AllowEmpty && IsSessionNotFound(err) {
-			return &Assertions{t: lm.t, trace: full, sessionTrace: full, fatal: fatal, allowEmpty: true, client: lm.client, ctx: ctx}
+			a := &Assertions{t: lm.t, trace: full, sessionTrace: full, fatal: fatal, allowEmpty: true}
+			a.attachSessionWait(lm, ctx)
+			return a
 		}
 		lm.fatalControl("wait", err)
 	}
@@ -310,11 +313,11 @@ func (lm *Session) assertions(ctx context.Context, fatal bool, opts ...WaitOptio
 		q := full.Query().Since(*wo.Since)
 		wo.Since = nil
 		a := q.newAssertions(lm.t, fatal, wo)
-		a.client = lm.client
-		a.ctx = ctx
+		a.attachSessionWait(lm, ctx)
 		return a
 	}
-	a := &Assertions{t: lm.t, trace: full, sessionTrace: full, fatal: fatal, allowEmpty: wo.AllowEmpty, client: lm.client, ctx: ctx}
+	a := &Assertions{t: lm.t, trace: full, sessionTrace: full, fatal: fatal, allowEmpty: wo.AllowEmpty}
+	a.attachSessionWait(lm, ctx)
 	if len(full.Calls) == 0 && !wo.AllowEmpty {
 		a.failNoCalls(lm.knownIDs(ctx))
 	}
@@ -463,6 +466,16 @@ func (q Query) newAssertions(t testing.TB, fatal bool, wo WaitOptions) *Assertio
 	}
 }
 
+func (a *Assertions) attachSessionWait(lm *Session, ctx context.Context) {
+	if a == nil || lm == nil {
+		return
+	}
+	a.client = lm.client
+	a.ctx = ctx
+	a.quiet = lm.quiet
+	a.timeout = lm.timeout
+}
+
 func (q Query) Upstream(name string) Query {
 	return q.keep(fmt.Sprintf("upstream(%q)", name), func(c Call) bool { return c.Provider == name })
 }
@@ -536,15 +549,20 @@ func appendFilter(filters []string, label string) []string {
 }
 
 type Assertions struct {
-	t             testing.TB
-	trace         Trace
-	sessionTrace  Trace
-	filters       []string
-	allowEmpty    bool
-	fatal         bool
-	summaryQueued bool
-	client        *Client
-	ctx           context.Context
+	t                    testing.TB
+	trace                Trace
+	sessionTrace         Trace
+	filters              []string
+	allowEmpty           bool
+	fatal                bool
+	summaryQueued        bool
+	client               *Client
+	ctx                  context.Context
+	quiet                time.Duration
+	timeout              time.Duration
+	otherWaitTimedOut    bool
+	otherWaitActive      int
+	otherWaitActiveKnown bool
 }
 
 func (a *Assertions) Trace() Trace {

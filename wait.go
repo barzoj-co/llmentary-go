@@ -201,17 +201,7 @@ func applyWaitEnv(quiet, timeout *time.Duration) error {
 	return nil
 }
 
-func countActiveCalls(calls []Call) int {
-	n := 0
-	for _, call := range calls {
-		if call.EndedAt.IsZero() {
-			n++
-		}
-	}
-	return n
-}
-
-func waitTimeoutError(sessionID string, timeout time.Duration, calls []Call, minCalls, callsSeen int) error {
+func waitTimeoutError(sessionID string, timeout time.Duration, calls []Call, minCalls, callsSeen int) *WaitTimeoutError {
 	if timeout <= 0 {
 		timeout = DefaultWaitTimeout
 	}

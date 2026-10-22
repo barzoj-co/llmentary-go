@@ -4,8 +4,11 @@ package llmentary
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"sort"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"golang.org/x/text/cases"
@@ -37,8 +40,9 @@ func RequirePathSource() IsolatedFromOption {
 	return func(c *isolatedFromConfig) { c.requirePath = true }
 }
 
-// WithOtherTrace supplies the other session's calls (fixture tests).
-// Live tests omit it and IsolatedFrom fetches GET /sessions/{id}.
+// WithOtherTrace supplies the other session's calls as given. IsolatedFrom
+// does not wait or re-fetch that session — the caller owns freshness.
+// Live tests omit it and IsolatedFrom waits on the other session id.
 func WithOtherTrace(tr Trace) IsolatedFromOption {
 	return func(c *isolatedFromConfig) {
 		cp := tr
@@ -77,8 +81,11 @@ func IgnoreTexts(texts ...string) IsolatedFromOption {
 //     whitespace collapse, and Unicode casefold — never substring.
 //
 // Empty this session, or a never-created / empty other session, fails
-// unless AllowEmpty. System/developer prompts and tool definitions are
-// never compared.
+// unless AllowEmpty. When other is a session id (no WithOtherTrace),
+// IsolatedFrom waits on it with the same quiet/timeout as Expect.
+// A wait timeout with only in-flight calls names that state instead of
+// "no calls recorded". System/developer prompts and tool definitions
+// are never compared.
 func (a *Assertions) IsolatedFrom(otherSessionID string, opts ...IsolatedFromOption) bool {
 	a.t.Helper()
 	var cfg isolatedFromConfig
@@ -129,6 +136,9 @@ func (a *Assertions) IsolatedFrom(otherSessionID string, opts ...IsolatedFromOpt
 		}
 	}
 	if !a.allowEmpty && len(other.Calls) == 0 {
+		if msg, ok := a.otherInFlightFailure(otherSessionID, 0); ok {
+			return a.fail("%s", msg)
+		}
 		return a.fail("no calls recorded for session %s (isolated_from needs calls on both sides)", otherSessionID)
 	}
 	ignore := isolationIgnoreSet(cfg.ignore)
@@ -157,8 +167,17 @@ func (a *Assertions) IsolatedFrom(otherSessionID string, opts ...IsolatedFromOpt
 			if !foreign {
 				continue
 			}
-			return a.fail("user text '%s' from session %s #%d (%s) appears in session %s #%d (%s); also introduced by session %s #%d (%s)",
+			msg := fmt.Sprintf("user text '%s' from session %s #%d (%s) appears in session %s #%d (%s); also introduced by session %s #%d (%s)",
 				text, hit.session, hit.seq, hit.callID, thisID, call.Seq, call.ID, hit.session, hit.seq, hit.callID)
+			if note, ok := a.otherInFlightFailure(otherSessionID, len(other.Calls)); ok {
+				msg += "; " + note
+			}
+			return a.fail("%s", msg)
+		}
+	}
+	if !a.allowEmpty {
+		if msg, ok := a.otherInFlightFailure(otherSessionID, len(other.Calls)); ok {
+			return a.fail("%s", msg)
 		}
 	}
 	return true
@@ -198,15 +217,59 @@ func (a *Assertions) otherIsolationTrace(otherSessionID string, supplied *Trace)
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	calls, err := a.client.Calls(ctx, otherSessionID)
-	if err != nil {
-		if IsSessionNotFound(err) {
-			return Trace{SessionID: otherSessionID}, true
-		}
-		a.fail("IsolatedFrom: fetch session %s: %v", otherSessionID, err)
-		return Trace{}, false
+	quiet, timeout := a.waitBounds()
+	calls, err := a.client.Wait(ctx, otherSessionID, quiet, timeout)
+	if err == nil {
+		return Trace{SessionID: otherSessionID, Calls: calls}, true
 	}
-	return Trace{SessionID: otherSessionID, Calls: calls}, true
+	if IsSessionNotFound(err) {
+		return Trace{SessionID: otherSessionID}, true
+	}
+	var wt *WaitTimeoutError
+	if errors.As(err, &wt) {
+		a.otherWaitTimedOut = true
+		if wt != nil && wt.ActiveKnown {
+			a.otherWaitActive = wt.Active
+			a.otherWaitActiveKnown = true
+		}
+		return Trace{SessionID: otherSessionID, Calls: wt.Calls}, true
+	}
+	a.fail("IsolatedFrom: wait session %s: %v", otherSessionID, err)
+	return Trace{}, false
+}
+
+func (a *Assertions) waitBounds() (quiet, timeout time.Duration) {
+	quiet, timeout = a.quiet, a.timeout
+	if quiet <= 0 {
+		quiet = DefaultWaitQuiet
+	}
+	if timeout <= 0 {
+		timeout = DefaultWaitTimeout
+	}
+	return quiet, timeout
+}
+
+func (a *Assertions) otherInFlightFailure(otherSessionID string, settled int) (string, bool) {
+	if a == nil || !a.otherWaitTimedOut {
+		return "", false
+	}
+	if a.otherWaitActiveKnown && a.otherWaitActive == 0 {
+		return "", false
+	}
+	n := a.otherWaitActive
+	if a.otherWaitActiveKnown {
+		return fmt.Sprintf("wait timed out on session %s (%d calls so far, session %s has %d %s still in flight)",
+			otherSessionID, settled, otherSessionID, n, callWord(n)), true
+	}
+	return fmt.Sprintf("wait timed out on session %s (%d calls so far, session %s has calls still in flight)",
+		otherSessionID, settled, otherSessionID), true
+}
+
+func callWord(n int) string {
+	if n == 1 {
+		return "call"
+	}
+	return "calls"
 }
 
 func (a *Assertions) requireIsolationCalls(thisID string, this []Call) bool {
