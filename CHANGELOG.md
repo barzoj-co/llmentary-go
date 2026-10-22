@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.3](https://github.com/barzoj-co/llmentary-go/compare/v0.4.2...v0.4.3) (2026-10-22)
+
+
+### Bug Fixes
+
+* wait IsolatedFrom on the other session ([#33](https://github.com/barzoj-co/llmentary-go/issues/33)) ([1a2c3a2](https://github.com/barzoj-co/llmentary-go/commit/1a2c3a20f8524a83fd8201c13478d5f9addee776))
+
 ## [Unreleased]
 
 ### Bug Fixes
