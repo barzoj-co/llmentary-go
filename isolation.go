@@ -218,6 +218,10 @@ func (a *Assertions) otherIsolationTrace(otherSessionID string, supplied *Trace)
 		ctx = context.Background()
 	}
 	quiet, timeout := a.waitBounds()
+	a.otherWaitTimedOut = false
+	a.otherWaitActive = 0
+	a.otherWaitActiveKnown = false
+	a.otherWaitInFlight = nil
 	calls, err := a.client.Wait(ctx, otherSessionID, quiet, timeout)
 	if err == nil {
 		return Trace{SessionID: otherSessionID, Calls: calls}, true
@@ -231,6 +235,9 @@ func (a *Assertions) otherIsolationTrace(otherSessionID string, supplied *Trace)
 		if wt != nil && wt.ActiveKnown {
 			a.otherWaitActive = wt.Active
 			a.otherWaitActiveKnown = true
+		}
+		if wt != nil {
+			a.otherWaitInFlight = wt.InFlight
 		}
 		return Trace{SessionID: otherSessionID, Calls: wt.Calls}, true
 	}
@@ -257,12 +264,21 @@ func (a *Assertions) otherInFlightFailure(otherSessionID string, settled int) (s
 		return "", false
 	}
 	n := a.otherWaitActive
+	detail := formatInFlightList(a.otherWaitInFlight)
 	if a.otherWaitActiveKnown {
-		return fmt.Sprintf("wait timed out on session %s (%d calls so far, session %s has %d %s still in flight)",
-			otherSessionID, settled, otherSessionID, n, callWord(n)), true
+		msg := fmt.Sprintf("wait timed out on session %s (%d calls so far, session %s has %d %s still in flight)",
+			otherSessionID, settled, otherSessionID, n, callWord(n))
+		if detail != "" {
+			msg += " [" + detail + "]"
+		}
+		return msg, true
 	}
-	return fmt.Sprintf("wait timed out on session %s (%d calls so far, session %s has calls still in flight)",
-		otherSessionID, settled, otherSessionID), true
+	msg := fmt.Sprintf("wait timed out on session %s (%d calls so far, session %s has calls still in flight)",
+		otherSessionID, settled, otherSessionID)
+	if detail != "" {
+		msg += " [" + detail + "]"
+	}
+	return msg, true
 }
 
 func callWord(n int) string {

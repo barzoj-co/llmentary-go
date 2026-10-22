@@ -563,6 +563,7 @@ type Assertions struct {
 	otherWaitTimedOut    bool
 	otherWaitActive      int
 	otherWaitActiveKnown bool
+	otherWaitInFlight    []InFlightCall
 }
 
 func (a *Assertions) Trace() Trace {

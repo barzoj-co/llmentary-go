@@ -213,9 +213,11 @@ optional `min_calls` as query parameters, for example
 
 Each variable accepts a Go duration (`45s`, `200ms`) or bare seconds (`45`,
 `0.2`). A wait timeout is a clear error: `wait timed out after 30s on session
-X (k calls so far, still active: n). Raise LLMENTARY_WAIT_TIMEOUT` if the
-graph needs more time. The client HTTP timeout is `timeout + quiet + 5s` so
-the request is not aborted before the proxy answers.
+X (k calls so far, still active: n [call_1 …]). Raise LLMENTARY_WAIT_TIMEOUT`
+if the graph needs more time. In-flight details come from the 504 body when
+present; an older proxy falls back to the GET /sessions count. The client HTTP
+timeout is `timeout + quiet + 5s` so the request is not aborted before the
+proxy answers.
 
 `wait` on a never-created session: `404 session_not_found` immediately when
 `min_calls=0` (`IsSessionNotFound`); `504 wait_timeout` after quiet when

@@ -68,6 +68,67 @@ func IsWaitTimeout(err error) bool {
 	return errors.As(err, &wt)
 }
 
+const (
+	// InFlightAwaitingHeaders is error.in_flight[].phase before upstream headers.
+	InFlightAwaitingHeaders = "awaiting_headers"
+	// InFlightStreaming is error.in_flight[].phase after upstream headers.
+	InFlightStreaming = "streaming"
+)
+
+// InFlightCall is a still-running call from a 504 wait_timeout (or GET
+// ?include=in_flight). It has no request/response bodies or headers.
+type InFlightCall struct {
+	CallID        string    `json:"call_id"`
+	Seq           int       `json:"seq"`
+	Method        string    `json:"method"`
+	Path          string    `json:"path"`
+	APIFamily     string    `json:"api_family,omitempty"`
+	Upstream      string    `json:"upstream,omitempty"`
+	StartedAt     time.Time `json:"started_at"`
+	ElapsedMS     int       `json:"elapsed_ms"`
+	Phase         string    `json:"phase"`
+	HTTPStatus    int       `json:"http_status,omitempty"`
+	BytesReceived int       `json:"bytes_received"`
+}
+
+func (c InFlightCall) brief() string {
+	var b strings.Builder
+	if c.CallID != "" {
+		b.WriteString(c.CallID)
+	} else {
+		b.WriteString("call")
+	}
+	if c.Seq > 0 {
+		fmt.Fprintf(&b, " seq=%d", c.Seq)
+	}
+	if c.APIFamily != "" {
+		fmt.Fprintf(&b, " %s", c.APIFamily)
+	} else if c.Path != "" {
+		fmt.Fprintf(&b, " %s", c.Path)
+	}
+	if c.Phase != "" {
+		fmt.Fprintf(&b, " %s", c.Phase)
+	}
+	if c.HTTPStatus > 0 {
+		fmt.Fprintf(&b, " status=%d", c.HTTPStatus)
+	}
+	if c.ElapsedMS > 0 {
+		fmt.Fprintf(&b, " %dms", c.ElapsedMS)
+	}
+	return b.String()
+}
+
+func formatInFlightList(calls []InFlightCall) string {
+	if len(calls) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(calls))
+	for _, c := range calls {
+		parts = append(parts, c.brief())
+	}
+	return strings.Join(parts, "; ")
+}
+
 // WaitTimeoutError is a 504 wait_timeout from /sessions/{id}/wait.
 type WaitTimeoutError struct {
 	SessionID   string
@@ -77,6 +138,7 @@ type WaitTimeoutError struct {
 	MinCalls    int
 	Active      int
 	ActiveKnown bool
+	InFlight    []InFlightCall
 }
 
 func (e *WaitTimeoutError) Error() string {
@@ -94,6 +156,9 @@ func (e *WaitTimeoutError) Error() string {
 	soFar := fmt.Sprintf("%d calls so far", n)
 	if e.ActiveKnown {
 		soFar += fmt.Sprintf(", still active: %d", e.Active)
+		if detail := formatInFlightList(e.InFlight); detail != "" {
+			soFar += " [" + detail + "]"
+		}
 	}
 	msg := fmt.Sprintf("wait timed out after %s on session %s (%s). Raise %s if the graph needs more time",
 		formatWaitDuration(timeout), e.SessionID, soFar, EnvWaitTimeout)
@@ -104,15 +169,18 @@ func (e *WaitTimeoutError) Error() string {
 }
 
 type statusError struct {
-	op        string
-	status    int
-	body      string
-	typ       string
-	message   string
-	param     string
-	session   sessionPayload
-	callsSeen int
-	minCalls  int
+	op          string
+	status      int
+	body        string
+	typ         string
+	message     string
+	param       string
+	session     sessionPayload
+	callsSeen   int
+	minCalls    int
+	active      *int
+	inFlight    []InFlightCall
+	inFlightSet bool
 }
 
 func (e *statusError) Error() string {
@@ -126,11 +194,13 @@ func parseStatusError(op string, status int, body string) *statusError {
 	}
 	var envelope struct {
 		Error struct {
-			Type      string `json:"type"`
-			Message   string `json:"message"`
-			Param     string `json:"param"`
-			CallsSeen int    `json:"calls_seen"`
-			MinCalls  int    `json:"min_calls"`
+			Type      string          `json:"type"`
+			Message   string          `json:"message"`
+			Param     string          `json:"param"`
+			CallsSeen int             `json:"calls_seen"`
+			MinCalls  int             `json:"min_calls"`
+			Active    *int            `json:"active"`
+			InFlight  json.RawMessage `json:"in_flight"`
 		} `json:"error"`
 		ID    string `json:"id"`
 		Calls []Call `json:"calls"`
@@ -143,8 +213,34 @@ func parseStatusError(op string, status int, body string) *statusError {
 	se.param = envelope.Error.Param
 	se.callsSeen = envelope.Error.CallsSeen
 	se.minCalls = envelope.Error.MinCalls
+	se.active = envelope.Error.Active
+	if raw := strings.TrimSpace(string(envelope.Error.InFlight)); strings.HasPrefix(raw, "[") {
+		var inflight []InFlightCall
+		if json.Unmarshal([]byte(raw), &inflight) == nil {
+			se.inFlight = inflight
+			se.inFlightSet = true
+		}
+	}
 	se.session = sessionPayload{ID: envelope.ID, Calls: envelope.Calls}
 	return se
+}
+
+func (e *statusError) waitInFlight() (active int, known bool, calls []InFlightCall) {
+	if e == nil {
+		return 0, false, nil
+	}
+	if e.active != nil {
+		known = true
+		active = *e.active
+	}
+	if e.inFlightSet {
+		calls = e.inFlight
+		if !known {
+			known = true
+			active = len(e.inFlight)
+		}
+	}
+	return active, known, calls
 }
 
 func (e *statusError) sessionNotFound() bool {

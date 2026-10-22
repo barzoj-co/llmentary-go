@@ -116,12 +116,13 @@ if llmentary.IsWaitTimeout(err) {
 
 Each variable accepts a Go duration (`45s`, `200ms`) or bare seconds (`45`,
 `0.2`). A wait timeout is a clear error: `wait timed out after 30s on session
-X (k calls so far, still active: n). Raise LLMENTARY_WAIT_TIMEOUT` if the
-graph needs more time. `still active` comes from the GET /sessions row,
-never from counting placeholder calls (those records are gone after
-proxy 0.4.1). When the row is unavailable the clause is omitted rather
-than inventing `0`. The client HTTP timeout is `timeout + quiet + 5s` so
-the request is not aborted before the proxy answers.
+X (k calls so far, still active: n [call_1 seq=1 openai.chat streaming]). Raise
+LLMENTARY_WAIT_TIMEOUT` if the graph needs more time. `still active` and the
+in-flight list come from the 504 `error.active` / `error.in_flight` fields when
+the proxy sends them. An older proxy without those fields still falls back to
+the GET /sessions row count (no call list). When neither is available the
+clause is omitted rather than inventing `0`. The client HTTP timeout is
+`timeout + quiet + 5s` so the request is not aborted before the proxy answers.
 
 `WithWait(quiet, timeout)` overrides the environment for one session.
 `Start` / `StartForTest` no longer require `WithUpstream`; the proxy defaults to

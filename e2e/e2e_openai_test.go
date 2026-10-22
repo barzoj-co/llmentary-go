@@ -1085,6 +1085,21 @@ func TestE2EIsolatedFromOtherInFlightTimeout(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
 
+	oaX := openai.NewClient(
+		option.WithAPIKey(apiKey),
+		option.WithBaseURL(lmX.PathBaseURL("openai")),
+		option.WithMaxRetries(0),
+	)
+	if _, err := oaX.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
+		Model:       e2eModel(),
+		Temperature: param.NewOpt(0.0),
+		Messages:    []openai.ChatCompletionMessageParamUnion{openai.UserMessage("Reply with the single word alpha.")},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Settle X first so IsolatedFrom runs as soon as Y's first chunk arrives.
+	// Starting Y before X lets a fast upstream completion settle Y during X.
 	reqCtx, reqCancel := context.WithCancel(context.Background())
 	defer reqCancel()
 	started := make(chan struct{})
@@ -1127,19 +1142,6 @@ func TestE2EIsolatedFromOtherInFlightTimeout(t *testing.T) {
 		t.Fatalf("Y stream ended before first chunk: %v", err)
 	case <-time.After(20 * time.Second):
 		t.Fatal("Y stream never produced a chunk")
-	}
-
-	oaX := openai.NewClient(
-		option.WithAPIKey(apiKey),
-		option.WithBaseURL(lmX.PathBaseURL("openai")),
-		option.WithMaxRetries(0),
-	)
-	if _, err := oaX.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
-		Model:       e2eModel(),
-		Temperature: param.NewOpt(0.0),
-		Messages:    []openai.ChatCompletionMessageParamUnion{openai.UserMessage("Reply with the single word alpha.")},
-	}); err != nil {
-		t.Fatal(err)
 	}
 
 	rec := &e2eRecorder{}

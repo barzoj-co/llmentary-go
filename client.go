@@ -175,6 +175,14 @@ func (c *Client) Wait(ctx context.Context, sessionID string, quiet, timeout time
 		}
 	}
 	wt := waitTimeoutError(sessionID, timeout, calls, minCalls, callsSeen)
+	if se := statusErrorOf(err); se != nil {
+		if active, known, inflight := se.waitInFlight(); known {
+			wt.Active = active
+			wt.ActiveKnown = true
+			wt.InFlight = inflight
+			return nil, wt
+		}
+	}
 	rowCtx, rowCancel := context.WithTimeout(ctx, waitHTTPPadding)
 	info, ok := c.sessionRow(rowCtx, sessionID)
 	rowCancel()
