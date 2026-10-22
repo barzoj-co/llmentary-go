@@ -236,6 +236,38 @@ func TestWaitTimeoutNullInFlightWithActive(t *testing.T) {
 	}
 }
 
+func TestWaitTimeoutNullInFlightWithoutActiveFallsBack(t *testing.T) {
+	listed := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/wait"):
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusGatewayTimeout)
+			_, _ = w.Write([]byte(`{"id":"sess","calls":[],"error":{"type":"wait_timeout","in_flight":null}}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/sessions":
+			listed++
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"sessions": []SessionInfo{{ID: "sess", Calls: 0, Active: 3}},
+			})
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	c, err := NewClient(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = c.Wait(context.Background(), "sess", time.Millisecond, 50*time.Millisecond)
+	wt := requireWaitTimeout(t, err)
+	if listed == 0 {
+		t.Fatal("in_flight:null without active must fall back to GET /sessions")
+	}
+	if !wt.ActiveKnown || wt.Active != 3 || len(wt.InFlight) != 0 {
+		t.Fatalf("fallback wt active=%d known=%v inflight=%+v", wt.Active, wt.ActiveKnown, wt.InFlight)
+	}
+}
+
 func TestWaitTimeoutInFlightBriefFallsBackToPath(t *testing.T) {
 	got := InFlightCall{Path: "/v1/embeddings", Phase: InFlightStreaming, HTTPStatus: 200}.brief()
 	if !strings.Contains(got, "call") || !strings.Contains(got, "/v1/embeddings") || !strings.Contains(got, "status=200") {

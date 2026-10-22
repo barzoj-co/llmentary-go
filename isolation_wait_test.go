@@ -269,6 +269,81 @@ func TestIsolatedFromOtherInFlightListedFrom504(t *testing.T) {
 	}
 }
 
+func TestIsolatedFromClearsPriorInFlightDetails(t *testing.T) {
+	xCall := isolationCall("x", "call_x1", 1, "header", `{"messages":[{"role":"user","content":"X asks its own question"}]}`)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if r.URL.Path == "/sessions" {
+			_ = json.NewEncoder(w).Encode(map[string]any{"sessions": []SessionInfo{{ID: "x", Calls: 1}}})
+			return
+		}
+		id, wait := isolationSessionPath(r.URL.Path)
+		if id == "x" {
+			writeSessionJSON(w, "x", []Call{xCall})
+			return
+		}
+		if !wait {
+			writeSessionNotFound(w, id)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusGatewayTimeout)
+		switch id {
+		case "y":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"id":    "y",
+				"calls": []Call{},
+				"error": map[string]any{
+					"type": "wait_timeout", "active": 1,
+					"in_flight": []InFlightCall{{CallID: "call_y_live", Seq: 1, Phase: InFlightStreaming}},
+				},
+			})
+		case "z":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"id":    "z",
+				"calls": []Call{},
+				"error": map[string]any{"type": "wait_timeout", "active": 1, "in_flight": []InFlightCall{}},
+			})
+		default:
+			writeSessionNotFound(w, id)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	x := New(t, WithControlURL(srv.URL), WithProxyURL(srv.URL), WithSessionID("x"), WithWait(time.Millisecond, 200*time.Millisecond))
+	rec := &fakeTB{}
+	x.t = rec
+	as := x.Check(context.Background())
+	if as.IsolatedFrom("y") {
+		t.Fatal("Y in-flight should fail")
+	}
+	if as.IsolatedFrom("z") {
+		t.Fatal("Z empty in-flight with active=1 should fail")
+	}
+	var yMsg, zMsg string
+	for _, m := range rec.messages {
+		if strings.Contains(m, "session y has") {
+			yMsg = m
+		}
+		if strings.Contains(m, "session z has") {
+			zMsg = m
+		}
+	}
+	if !strings.Contains(yMsg, "call_y_live") {
+		t.Fatalf("first IsolatedFrom should list Y: %v", rec.messages)
+	}
+	if zMsg == "" || !strings.Contains(zMsg, "session z has 1 call still in flight") {
+		t.Fatalf("want Z timeout, got %v", rec.messages)
+	}
+	if strings.Contains(zMsg, "call_y_live") {
+		t.Fatalf("second IsolatedFrom retained Y in-flight: %s", zMsg)
+	}
+	rec.flush()
+}
+
 func TestIsolatedFromOtherTimeoutActiveZeroIsIsolated(t *testing.T) {
 	yOpen := isolationCall("y", "call_y1", 1, "header", `{"messages":[{"role":"user","content":"Y opening question (nonce-quiet)"}]}`)
 	xCall := isolationCall("x", "call_x1", 1, "header", `{"messages":[{"role":"user","content":"X asks its own question"}]}`)

@@ -214,9 +214,9 @@ func parseStatusError(op string, status int, body string) *statusError {
 	se.callsSeen = envelope.Error.CallsSeen
 	se.minCalls = envelope.Error.MinCalls
 	se.active = envelope.Error.Active
-	if envelope.Error.InFlight != nil {
+	if raw := strings.TrimSpace(string(envelope.Error.InFlight)); strings.HasPrefix(raw, "[") {
 		var inflight []InFlightCall
-		if json.Unmarshal(envelope.Error.InFlight, &inflight) == nil {
+		if json.Unmarshal([]byte(raw), &inflight) == nil {
 			se.inFlight = inflight
 			se.inFlightSet = true
 		}

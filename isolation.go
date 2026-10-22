@@ -218,6 +218,10 @@ func (a *Assertions) otherIsolationTrace(otherSessionID string, supplied *Trace)
 		ctx = context.Background()
 	}
 	quiet, timeout := a.waitBounds()
+	a.otherWaitTimedOut = false
+	a.otherWaitActive = 0
+	a.otherWaitActiveKnown = false
+	a.otherWaitInFlight = nil
 	calls, err := a.client.Wait(ctx, otherSessionID, quiet, timeout)
 	if err == nil {
 		return Trace{SessionID: otherSessionID, Calls: calls}, true
@@ -232,7 +236,7 @@ func (a *Assertions) otherIsolationTrace(otherSessionID string, supplied *Trace)
 			a.otherWaitActive = wt.Active
 			a.otherWaitActiveKnown = true
 		}
-		if wt != nil && len(wt.InFlight) > 0 {
+		if wt != nil {
 			a.otherWaitInFlight = wt.InFlight
 		}
 		return Trace{SessionID: otherSessionID, Calls: wt.Calls}, true
