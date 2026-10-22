@@ -13,10 +13,8 @@ Workflows live under `.github/workflows/`. The main pipeline is `ci.yml`:
   profile fails the required `test` check — same idea as `e2e-gate`.
 - `integration`: non-fork pull requests and pushes to `main`; downloads the
   pinned `ProxyVersion` GitHub Release of `barzoj-co/llmentary` (`v0.4.1`)
-  with `llmentary.DownloadRelease` (checksum-verified). The existing
-  `secrets.LLMTESTLAB_REPO_TOKEN` is passed as `GH_TOKEN` (never in a URL or
-  log) so the private release download does not use the default Actions
-  `GITHUB_TOKEN`. The same step drift-checks `testdata/isolation` against
+  with `llmentary.DownloadRelease` (checksum-verified, anonymous public
+  download). The same step drift-checks `testdata/isolation` against
   that `ProxyVersion` tag, not proxy `main`. Runs the mock-upstream example, uploads
   `coverage-integration.out` tokenless, and publishes the same file as a
   workflow artifact for the `test` job gate
@@ -24,8 +22,10 @@ Workflows live under `.github/workflows/`. The main pipeline is `ci.yml`:
   so each live run waits for maintainer approval; installs the same released
   `v0.4.1` binary (no build from proxy main), downloads and compiles the
   e2e module without secrets, then runs the live OpenAI suite
-- `e2e-gate`: always runs; green only when `e2e` succeeded. This is the check
-  to require, not `e2e` itself (a skipped required check is treated as passing).
+- `e2e-gate`: always runs. Green when `e2e` succeeded, or when `e2e` was
+  skipped on a fork PR (`skipped (fork, no secrets)`). Same-repo PRs still
+  fail the gate if live e2e did not run. This is the check to require, not
+  `e2e` itself (a skipped required check is treated as passing).
   A rejected or timed-out environment approval makes `e2e-gate` red.
 
 The e2e tests fail (they do not skip) when `OPENAI_API_KEY` is unset so missing
@@ -35,20 +35,19 @@ executed test names are visible in the log. Secret values are never printed.
 ## CI secrets and the e2e gate
 
 No secret is set at workflow or job level. `OPENAI_E2E_MODEL` (a variable) may
-stay on the `e2e` job. `LLMTESTLAB_REPO_TOKEN` is only in the step `env:` of
-`Install pinned proxy release`. `OPENAI_API_KEY` is only in the step `env:` of
+stay on the `e2e` job. `OPENAI_API_KEY` is only in the step `env:` of
 `OpenAI e2e tests`. Presence checks use the boolean form (`secrets.X != ''`),
-never `$OPENAI_API_KEY`.
+never `$OPENAI_API_KEY`. The pinned proxy install is anonymous and does not
+need a GitHub PAT.
 
 `e2e` is not a matrix. Only that job sets `environment: openai-e2e`. Unit,
 integration, and mock-upstream tests do not, so they run without approval.
 `OPENAI_API_KEY` must not appear on any other job. If an approval is rejected
 or times out, `e2e` does not succeed and `e2e-gate` goes red. That is intended.
 
-Fork pull requests skip `e2e` (no secrets). `e2e-gate` then fails with
-`live e2e did not run; a maintainer must run it`. A maintainer reviews the
-diff and pushes it to a same-repo branch; the live job runs there. Never use
-`pull_request_target` to "fix" this.
+Fork pull requests skip `e2e` (no secrets). `e2e-gate` then passes with
+`skipped (fork, no secrets)`. Same-repo PRs still fail the gate if live e2e
+did not run. Never use `pull_request_target` to inject secrets into a fork.
 
 **Known limitation:** on `pull_request`, GitHub runs the workflow and scripts
 from the PR's own merge commit, so a PR that edits `ci.yml` or

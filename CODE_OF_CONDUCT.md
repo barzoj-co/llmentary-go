@@ -63,9 +63,8 @@ reported to the community leaders responsible for enforcement through GitHub
 private vulnerability reporting at
 https://github.com/barzoj-co/llmentary-go/security/advisories/new.
 This channel is used for Code of Conduct reports as well as security reports;
-title the report so it is clear it is a conduct report. Private reporting
-becomes available once the repository is public. Do not file a public issue for
-conduct reports. There is no email address for enforcement.
+title the report so it is clear it is a conduct report. Do not file a public
+issue for conduct reports. There is no email address for enforcement.
 
 All complaints will be reviewed and investigated promptly and fairly.
 

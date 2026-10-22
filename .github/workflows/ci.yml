@@ -91,16 +91,6 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Require secrets
-        env:
-          HAS_REPO_TOKEN: ${{ secrets.LLMTESTLAB_REPO_TOKEN != '' }}
-        run: |
-          echo "LLMTESTLAB_REPO_TOKEN present: ${HAS_REPO_TOKEN}"
-          if [ "${HAS_REPO_TOKEN}" != "true" ]; then
-            echo "::error::LLMTESTLAB_REPO_TOKEN is required to download the pinned proxy release"
-            exit 1
-          fi
-
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: "1.26.10"
@@ -111,7 +101,6 @@ jobs:
 
       - name: Install pinned proxy release
         env:
-          GH_TOKEN: ${{ secrets.LLMTESTLAB_REPO_TOKEN }}
           LLMENTARY_LIVE_DOWNLOAD: "1"
           LLMENTARY_LIVE_DOWNLOAD_DIR: ${{ github.workspace }}/bin
         run: |
@@ -159,17 +148,11 @@ jobs:
 
       - name: Require secrets
         env:
-          HAS_REPO_TOKEN: ${{ secrets.LLMTESTLAB_REPO_TOKEN != '' }}
           HAS_OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY != '' }}
         run: |
-          echo "LLMTESTLAB_REPO_TOKEN present: ${HAS_REPO_TOKEN}"
           echo "OPENAI_API_KEY present: ${HAS_OPENAI_API_KEY}"
           if [ "${HAS_OPENAI_API_KEY}" != "true" ]; then
             echo "::error::OPENAI_API_KEY is required for non-fork e2e runs"
-            exit 1
-          fi
-          if [ "${HAS_REPO_TOKEN}" != "true" ]; then
-            echo "::error::LLMTESTLAB_REPO_TOKEN is required to download the pinned proxy release"
             exit 1
           fi
 
@@ -184,7 +167,6 @@ jobs:
 
       - name: Install pinned proxy release
         env:
-          GH_TOKEN: ${{ secrets.LLMTESTLAB_REPO_TOKEN }}
           LLMENTARY_LIVE_DOWNLOAD: "1"
           LLMENTARY_LIVE_DOWNLOAD_DIR: ${{ github.workspace }}/bin
         run: |

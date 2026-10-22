@@ -105,6 +105,7 @@ WHOLE_SECRETS = re.compile(
     r"\$\{\{[^}]*(?:toJSON\s*\(\s*secrets\s*\)|(?<![\w.])secrets\s*\}\})"
 )
 TOKEN_EXEMPT = {"GITHUB_TOKEN", "github.token"}
+BANNED_SECRETS = {"LLMTESTLAB_REPO_TOKEN"}
 
 
 def iter_mapping(node):
@@ -279,6 +280,12 @@ def check_file(path: pathlib.Path) -> list[str]:
         for job_id, _, job_node in iter_mapping(jobs_node):
             jobs[job_id] = job_node
             check_job(rel, job_id, job_node, errors)
+
+    for s in walk_strings(root_node):
+        val = s.value or ""
+        for name in BANNED_SECRETS:
+            if name in val:
+                errors.append(f"{rel}:{line_of(s)}: {name} is not allowed")
 
     if path.name in {"ci.yml", "ci.yaml"}:
         gate = jobs.get("e2e-gate")

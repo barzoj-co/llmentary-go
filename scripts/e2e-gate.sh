@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Exit 0 only when the live e2e job result is success. Used by the e2e-gate job.
+# Exit 0 when live e2e succeeded, or when it was skipped on a fork PR.
+# Same-repo skipped/failed e2e still fails the gate.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SCRIPT="${ROOT}/scripts/e2e-gate.sh"
 
-FORK_MSG="live e2e did not run; a maintainer must run it"
-FORK_HINT="Review the diff and push it to a same-repo branch so e2e runs there; never use pull_request_target."
+FORK_SKIP_MSG="skipped (fork, no secrets)"
 
 evaluate() {
   local result="${E2E_RESULT-}"
@@ -18,9 +18,8 @@ evaluate() {
   fi
 
   if [[ "${is_fork}" == "true" && "${result}" == "skipped" ]]; then
-    echo "::error::${FORK_MSG}"
-    echo "${FORK_HINT}"
-    return 1
+    echo "${FORK_SKIP_MSG}"
+    return 0
   fi
 
   if [[ "${result}" == "skipped" ]]; then
@@ -65,12 +64,21 @@ self_test() {
   local failed=0
 
   run_case success pull_request false 0 || failed=1
-  run_case skipped pull_request true 1 "${FORK_MSG}" || failed=1
+  run_case success pull_request true 0 || failed=1
+  run_case skipped pull_request true 0 "${FORK_SKIP_MSG}" || failed=1
+  run_case skipped pull_request false 1 \
+    "live e2e did not run (event=pull_request, result=skipped)" || failed=1
   run_case skipped workflow_dispatch false 1 \
     "live e2e did not run (event=workflow_dispatch, result=skipped)" || failed=1
+  run_case skipped push false 1 \
+    "live e2e did not run (event=push, result=skipped)" || failed=1
   run_case failure pull_request false 1 \
     "live e2e did not succeed (result=failure)" || failed=1
+  run_case failure pull_request true 1 \
+    "live e2e did not succeed (result=failure)" || failed=1
   run_case cancelled pull_request false 1 \
+    "live e2e did not succeed (result=cancelled)" || failed=1
+  run_case cancelled pull_request true 1 \
     "live e2e did not succeed (result=cancelled)" || failed=1
   run_case "" pull_request false 1 \
     "live e2e did not succeed (result=)" || failed=1

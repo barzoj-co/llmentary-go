@@ -8,8 +8,6 @@ https://github.com/barzoj-co/llmentary-go/security/advisories/new
 
 Do **not** open a public issue, discussion, or pull request about an unfixed vulnerability.
 
-Private reporting becomes available once this repository is public. Until then, only people with access to the repository can open a draft advisory.
-
 Proxy (binary / server) vulnerabilities belong in [`barzoj-co/llmentary`](https://github.com/barzoj-co/llmentary/security/advisories/new), not here.
 
 ## Supported versions

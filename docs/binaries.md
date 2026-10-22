@@ -40,8 +40,8 @@ proxy, err := llmentary.Start(ctx,
 ```
 
 Pass `DownloadOptions.Version` as `ProxyVersion` unless you intentionally pin
-another tag. Optional `DownloadOptions.Token` authenticates private GitHub
-Release assets; when empty the client consults `LLMENTARY_GITHUB_TOKEN`,
-`GH_TOKEN`, `GITHUB_TOKEN`, then `LLMTESTLAB_REPO_TOKEN`.
+another tag. Optional `DownloadOptions.Token` is a GitHub rate-limit assist
+for public Release assets; a token is never required. When empty the client
+consults `LLMENTARY_GITHUB_TOKEN`, `GH_TOKEN`, then `GITHUB_TOKEN`.
 
 See [GitHub Actions and CI](ci.md) for how CI installs the pinned release.
