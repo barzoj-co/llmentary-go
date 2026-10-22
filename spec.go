@@ -13,6 +13,15 @@ func (c Call) Validation() *Validation {
 	return c.Normalized.Validation
 }
 
+// SpecTarget returns normalized.validation.target (openai or
+// openai-compatible), or "" when validation is absent or the field is empty.
+func (c Call) SpecTarget() string {
+	if v := c.Validation(); v != nil {
+		return v.Target
+	}
+	return ""
+}
+
 // SpecViolations returns the findings and whether validation ran.
 // bool is false when the spec_violations key is absent (not checked).
 // An empty slice with true is clean.

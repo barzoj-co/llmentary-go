@@ -151,6 +151,47 @@ func TestDefaultUpstreamConfig(t *testing.T) {
 	if strings.Count(got, "/v1") > 1 {
 		t.Fatalf("default upstream URL looks doubled: %s", got)
 	}
+	if cfg.SpecTarget("openai") != llmentary.SpecTargetOpenAI {
+		t.Fatalf("default openai host spec_targets=%v", cfg.SpecTargets)
+	}
+	if header, ok, err := cfg.HeaderTimeout(); err != nil || !ok || header != 0 {
+		t.Fatalf("default header timeout=%v ok=%v err=%v", header, ok, err)
+	}
+	if idle, ok, err := cfg.IdleTimeout(); err != nil || !ok || idle != 0 {
+		t.Fatalf("default idle timeout=%v ok=%v err=%v", idle, ok, err)
+	}
+}
+
+func TestLocalUpstreamCompatibleTargetAndTimeoutFlags(t *testing.T) {
+	if _, err := llmentary.ResolveBinary(); err != nil {
+		t.Skip(err.Error())
+	}
+	upstream := mockChatUpstream(t)
+	proxy := llmentary.StartForTest(t,
+		llmentary.WithUpstream("openai="+upstream.URL),
+		llmentary.WithUpstreamHeaderTimeout(2*time.Second),
+		llmentary.WithUpstreamIdleTimeout(1500*time.Millisecond),
+		llmentary.WithStartTimeout(10*time.Second),
+	)
+	client, err := llmentary.NewClient(proxy.ControlURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := client.Config(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.SpecTarget("openai") != llmentary.SpecTargetOpenAICompatible {
+		t.Fatalf("localhost spec_targets=%v want openai-compatible", cfg.SpecTargets)
+	}
+	header, ok, err := cfg.HeaderTimeout()
+	if err != nil || !ok || header != 2*time.Second {
+		t.Fatalf("header timeout=%v ok=%v err=%v raw=%q", header, ok, err, cfg.UpstreamHeaderTimeout)
+	}
+	idle, ok, err := cfg.IdleTimeout()
+	if err != nil || !ok || idle != 1500*time.Millisecond {
+		t.Fatalf("idle timeout=%v ok=%v err=%v raw=%q", idle, ok, err, cfg.UpstreamIdleTimeout)
+	}
 }
 
 func mockChatUpstream(t *testing.T) *httptest.Server {

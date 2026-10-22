@@ -33,15 +33,15 @@ func TestDefaultReleaseRepo(t *testing.T) {
 }
 
 func TestProxyVersion(t *testing.T) {
-	if ProxyVersion != "v0.4.1" {
-		t.Fatalf("ProxyVersion=%q want v0.4.1", ProxyVersion)
+	if ProxyVersion != "v0.5.0" {
+		t.Fatalf("ProxyVersion=%q want v0.5.0", ProxyVersion)
 	}
 	tag, version := normalizeReleaseVersion(ProxyVersion)
-	if tag != "v0.4.1" || version != "0.4.1" {
+	if tag != "v0.5.0" || version != "0.5.0" {
 		t.Fatalf("normalizeReleaseVersion(%q)=(%q, %q)", ProxyVersion, tag, version)
 	}
 	got := releaseArchiveName(version, "linux", "amd64")
-	if got != "llmentary_0.4.1_linux_amd64.tar.gz" {
+	if got != "llmentary_0.5.0_linux_amd64.tar.gz" {
 		t.Fatalf("releaseArchiveName=%q", got)
 	}
 }
@@ -86,8 +86,8 @@ func TestDownloadPinnedProxyRelease(t *testing.T) {
 		t.Fatalf("running downloaded binary: %v\n%s", err, out)
 	}
 	t.Logf("llmentary --version=%s", gotVer)
-	if !strings.Contains(gotVer, "llmentary 0.4.1") || !strings.Contains(gotVer, "go1.26.10") {
-		t.Fatalf("llmentary --version=%q want llmentary 0.4.1 (..., go1.26.10)", gotVer)
+	if !strings.Contains(gotVer, "llmentary 0.5.0") || !strings.Contains(gotVer, "go1.26.10") {
+		t.Fatalf("llmentary --version=%q want llmentary 0.5.0 (..., go1.26.10)", gotVer)
 	}
 }
 
@@ -98,8 +98,8 @@ func TestReleaseArchiveName(t *testing.T) {
 	if got != want {
 		t.Fatalf("releaseArchiveName=%q want %q", got, want)
 	}
-	if got == "llmentary_0.4.0_linux_amd64.tar.gz" {
-		t.Fatal("archive name still uses previous pin v0.4.0")
+	if got == "llmentary_0.4.1_linux_amd64.tar.gz" {
+		t.Fatal("archive name still uses previous pin v0.4.1")
 	}
 	old := "llm-test-lab_" + version + "_linux_amd64.tar.gz"
 	if got == old {
@@ -109,9 +109,9 @@ func TestReleaseArchiveName(t *testing.T) {
 	if _, err := checksumForFile([]byte(sum+"  "+old+"\n"), got); err == nil {
 		t.Fatal("expected checksum lookup to reject llm-test-lab archive names")
 	}
-	stale := "llmentary_0.4.0_linux_amd64.tar.gz"
+	stale := "llmentary_0.4.1_linux_amd64.tar.gz"
 	if _, err := checksumForFile([]byte(sum+"  "+stale+"\n"), got); err == nil {
-		t.Fatal("expected checksum lookup to reject previous pin v0.4.0 assets")
+		t.Fatal("expected checksum lookup to reject previous pin v0.4.1 assets")
 	}
 }
 
@@ -290,7 +290,7 @@ func TestDownloadReleaseRejectsStalePinChecksums(t *testing.T) {
 	archive, sum := testTarGz(t, "llmentary", []byte("payload"))
 	_, version := normalizeReleaseVersion(ProxyVersion)
 	archiveName := releaseArchiveName(version, "linux", "amd64")
-	staleName := "llmentary_0.4.0_linux_amd64.tar.gz"
+	staleName := "llmentary_0.4.1_linux_amd64.tar.gz"
 	mux := http.NewServeMux()
 	mux.HandleFunc("/"+ProxyVersion+"/"+archiveName, func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write(archive)
@@ -315,8 +315,8 @@ func TestDownloadReleaseRejectsStalePinChecksums(t *testing.T) {
 }
 
 func TestPinnedProxyReleaseAssetNames(t *testing.T) {
-	if ProxyVersion != "v0.4.1" {
-		t.Fatalf("ProxyVersion=%q want v0.4.1", ProxyVersion)
+	if ProxyVersion != "v0.5.0" {
+		t.Fatalf("ProxyVersion=%q want v0.5.0", ProxyVersion)
 	}
 	_, version := normalizeReleaseVersion(ProxyVersion)
 	platforms := []struct {
@@ -336,7 +336,7 @@ func TestPinnedProxyReleaseAssetNames(t *testing.T) {
 		if !strings.HasSuffix(name, "_"+p.goos+"_"+p.goarch+p.ext) {
 			t.Fatalf("releaseArchiveName(%s/%s)=%q", p.goos, p.goarch, name)
 		}
-		if strings.Contains(name, "0.4.0") {
+		if strings.Contains(name, "0.4.1") {
 			t.Fatalf("platform asset still names previous pin: %s", name)
 		}
 		listed.WriteString(sum + "  " + name + "\n")
@@ -353,7 +353,7 @@ func TestPinnedProxyReleaseAssetNames(t *testing.T) {
 		}
 	}
 	missing := releaseArchiveName(version, "linux", "amd64")
-	if _, err := checksumForFile([]byte(sum+"  llmentary_0.4.0_linux_amd64.tar.gz\n"), missing); err == nil {
+	if _, err := checksumForFile([]byte(sum+"  llmentary_0.4.1_linux_amd64.tar.gz\n"), missing); err == nil {
 		t.Fatal("checksums for previous pin must not satisfy current linux/amd64 asset")
 	}
 }

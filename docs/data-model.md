@@ -79,7 +79,8 @@ is `llmentary.Session` (`lm := llmentary.New(t)`).
 | `raw_response` | base64 string | Raw response bytes used for parsing. Gzip upstream responses are decompressed in the recorded copy. |
 | `sse_events` | array | Parsed SSE events for streaming responses. |
 | `stream` | boolean | Whether the response was detected as SSE. |
-| `http_status` | number | Upstream HTTP status, or proxy error status. `0` on a before-headers client abort (never 502). |
+| `http_status` | number | Upstream HTTP status, or proxy error status. `0` on a before-headers client abort (never 502). Header timeout is `504`. |
+| `upstream_called` | boolean | True when the outbound request was written. False if a header timeout or cancel happens before that. |
 | `client_aborted` | boolean | Top-level abort flag (DOG-27). Older proxies only set `normalized.client_aborted`; the Go client copies that alias. |
 | `abort_phase` | string, optional | `before_headers` or `after_headers` when aborted. Absent on older proxies (log-only). |
 | `retry_count` | number, optional | Integer parsed from `x-stainless-retry-count`. |
@@ -185,7 +186,7 @@ from an Azure-style `/deployments/{deployment}/...` path segment.
 | `client_aborted` | Deprecated 0.x alias of the top-level `Call.client_aborted` field. |
 | `parser_warnings` | Non-fatal parser warnings. |
 | `raw` | Reserved raw normalized payload field; currently not populated by parsers. |
-| `validation` | Spec-check metadata (mode, profile, whether request/response were checked). Not a finding list. |
+| `validation` | Spec-check metadata (mode, profile, target, whether request/response were checked). Not a finding list. `target` is `openai` or `openai-compatible`. |
 | `spec_violations` | Findings. `[]` is clean. Absent means validation was not run. |
 | `ignored_fields` | Vendor keywords the proxy ignored. Same empty-vs-absent rule as `spec_violations`. |
 
@@ -287,7 +288,14 @@ Error normalization categories are:
 - `content_filter`
 - `bad_request`
 - `network`
+- `upstream_timeout`
+- `upstream_idle_timeout`
 - `unknown`
+
+A header timeout records `http_status` 504, `error.source: proxy`, and
+`upstream_called` from whether the outbound request was written. An idle
+timeout keeps the upstream status, sets `error.source: proxy`, and never
+`error.mid_stream`.
 
 ## Usage
 

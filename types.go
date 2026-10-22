@@ -6,6 +6,9 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -43,6 +46,10 @@ type Call struct {
 	HTTPStatus    int               `json:"http_status"`
 	RetryCount    *int              `json:"retry_count,omitempty"`
 	RetryAfter    string            `json:"retry_after,omitempty"`
+	// UpstreamCalled is true when the outbound request was written
+	// (httptrace.WroteRequest). A header timeout or cancel can leave
+	// this false.
+	UpstreamCalled bool `json:"upstream_called,omitempty"`
 	// ClientAborted is a top-level Call field (DOG-27). Older proxies
 	// only set normalized.client_aborted; UnmarshalJSON copies that alias.
 	ClientAborted bool `json:"client_aborted,omitempty"`
@@ -56,6 +63,15 @@ type Call struct {
 const (
 	AbortPhaseBeforeHeaders = "before_headers"
 	AbortPhaseAfterHeaders  = "after_headers"
+
+	// Spec targets on GET /config spec_targets and normalized.validation.target.
+	SpecTargetOpenAI           = "openai"
+	SpecTargetOpenAICompatible = "openai-compatible"
+
+	// CallError.Normalized values for optional upstream timeouts (DOG-39).
+	ErrorNormalizedUpstreamTimeout     = "upstream_timeout"
+	ErrorNormalizedUpstreamIdleTimeout = "upstream_idle_timeout"
+	ErrorSourceProxy                   = "proxy"
 )
 
 func (c *Call) UnmarshalJSON(data []byte) error {
@@ -176,8 +192,11 @@ type Normalized struct {
 // Validation is the spec-check metadata block on normalized.validation.
 // It says whether the call was checked and how, not what was found.
 type Validation struct {
-	Mode                  string `json:"mode,omitempty"`
-	Profile               string `json:"profile,omitempty"`
+	Mode    string `json:"mode,omitempty"`
+	Profile string `json:"profile,omitempty"`
+	// Target is the per-upstream spec target: openai or openai-compatible.
+	// Absent on older proxies and when validation was not run.
+	Target                string `json:"target,omitempty"`
 	SpecSHA               string `json:"spec_sha,omitempty"`
 	SchemaSubsetRetrieved string `json:"schema_subset_retrieved,omitempty"`
 	RequestChecked        bool   `json:"request_checked,omitempty"`
@@ -223,11 +242,14 @@ type SessionInfo struct {
 	LastEndedAt    *time.Time `json:"last_ended_at,omitempty"`
 }
 
-// ProxyConfig is the GET /config payload. Version and upstreams are the
-// fields the client relies on; extra keys are ignored.
+// ProxyConfig is the GET /config payload. Version, upstreams, spec
+// targets, and optional upstream timeouts are typed; extra keys are ignored.
 type ProxyConfig struct {
-	Version   string
-	Upstreams map[string]string
+	Version               string
+	Upstreams             map[string]string
+	SpecTargets           map[string]string
+	UpstreamHeaderTimeout string
+	UpstreamIdleTimeout   string
 }
 
 func (c *ProxyConfig) UnmarshalJSON(data []byte) error {
@@ -236,8 +258,8 @@ func (c *ProxyConfig) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	if v, ok := raw["version"]; ok {
-		var version string
-		if err := json.Unmarshal(v, &version); err != nil {
+		version, err := unmarshalConfigString(v)
+		if err != nil {
 			return err
 		}
 		c.Version = version
@@ -249,7 +271,49 @@ func (c *ProxyConfig) UnmarshalJSON(data []byte) error {
 		}
 		c.Upstreams = upstreams
 	}
+	if t, ok := raw["spec_targets"]; ok {
+		targets, err := parseConfigSpecTargets(t)
+		if err != nil {
+			return err
+		}
+		c.SpecTargets = targets
+	}
+	if h, ok := raw["upstream_header_timeout"]; ok {
+		header, err := unmarshalConfigString(h)
+		if err != nil {
+			return err
+		}
+		c.UpstreamHeaderTimeout = header
+	}
+	if idle, ok := raw["upstream_idle_timeout"]; ok {
+		idleTimeout, err := unmarshalConfigString(idle)
+		if err != nil {
+			return err
+		}
+		c.UpstreamIdleTimeout = idleTimeout
+	}
 	return nil
+}
+
+// SpecTarget returns the effective spec target for an upstream name, or
+// "" when GET /config omitted that name.
+func (c ProxyConfig) SpecTarget(upstream string) string {
+	if c.SpecTargets == nil {
+		return ""
+	}
+	return c.SpecTargets[upstream]
+}
+
+// HeaderTimeout parses upstream_header_timeout. ok is false when the
+// field was omitted or empty. A present "0s" is disabled (0, true, nil).
+func (c ProxyConfig) HeaderTimeout() (time.Duration, bool, error) {
+	return parseConfigDuration(c.UpstreamHeaderTimeout)
+}
+
+// IdleTimeout parses upstream_idle_timeout. Same empty-vs-zero rule as
+// HeaderTimeout.
+func (c ProxyConfig) IdleTimeout() (time.Duration, bool, error) {
+	return parseConfigDuration(c.UpstreamIdleTimeout)
 }
 
 func parseConfigUpstreams(raw json.RawMessage) (map[string]string, error) {
@@ -292,6 +356,62 @@ func parseConfigUpstreams(raw json.RawMessage) (map[string]string, error) {
 		return out, nil
 	}
 	return nil, nil
+}
+
+func parseConfigSpecTargets(raw json.RawMessage) (map[string]string, error) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil, nil
+	}
+	var asMap map[string]string
+	if err := json.Unmarshal(raw, &asMap); err == nil {
+		return asMap, nil
+	}
+	var asAnyMap map[string]any
+	if err := json.Unmarshal(raw, &asAnyMap); err == nil && asAnyMap != nil {
+		out := make(map[string]string, len(asAnyMap))
+		for name, value := range asAnyMap {
+			if s, ok := value.(string); ok && s != "" {
+				out[name] = s
+			}
+		}
+		if len(out) > 0 {
+			return out, nil
+		}
+		return map[string]string{}, nil
+	}
+	return nil, nil
+}
+
+func unmarshalConfigString(raw json.RawMessage) (string, error) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return "", nil
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err != nil {
+		return "", err
+	}
+	return s, nil
+}
+
+func parseConfigDuration(raw string) (time.Duration, bool, error) {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return 0, false, nil
+	}
+	if d, err := time.ParseDuration(value); err == nil {
+		if d < 0 {
+			return 0, false, fmt.Errorf("config duration %q must be non-negative", raw)
+		}
+		return d, true, nil
+	}
+	secs, err := strconv.ParseFloat(value, 64)
+	if err != nil {
+		return 0, false, fmt.Errorf("config duration %q: want a Go duration like 2s or bare seconds like 2", raw)
+	}
+	if secs < 0 {
+		return 0, false, fmt.Errorf("config duration %q must be non-negative", raw)
+	}
+	return time.Duration(secs * float64(time.Second)), true, nil
 }
 
 type Model struct {
@@ -362,6 +482,7 @@ type CallError struct {
 	Message    string `json:"message,omitempty"`
 	Normalized string `json:"normalized,omitempty"`
 	MidStream  bool   `json:"mid_stream,omitempty"`
+	Source     string `json:"source,omitempty"`
 }
 
 func NewSessionID() string {
