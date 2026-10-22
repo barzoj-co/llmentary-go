@@ -5,6 +5,7 @@
 ### Bug Fixes
 
 * list still-running calls from wait 504 `error.in_flight` (DOG-38)
+* fetch pinned isolation vectors from the public GitHub archive instead of the Contents API
 
 ### Miscellaneous Chores
 
