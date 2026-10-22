@@ -223,6 +223,52 @@ func TestIsolatedFromOtherTimeoutKeepsSettledCalls(t *testing.T) {
 	}
 }
 
+func TestIsolatedFromOtherInFlightListedFrom504(t *testing.T) {
+	xCall := isolationCall("x", "call_x1", 1, "header", `{"messages":[{"role":"user","content":"X asks its own question"}]}`)
+	active := 1
+	srv := newIsolationWaitServer(t, isolationWaitStub{
+		x:           []Call{xCall},
+		yWaitErr:    http.StatusGatewayTimeout,
+		yWaitActive: &active,
+		yWaitInFlight: []InFlightCall{{
+			CallID:     "call_y_live",
+			Seq:        1,
+			Method:     "POST",
+			Path:       "/v1/chat/completions",
+			APIFamily:  "openai.chat",
+			Phase:      InFlightStreaming,
+			HTTPStatus: 200,
+			ElapsedMS:  750,
+		}},
+		yWaitInFlightSet: true,
+		sessions:         []SessionInfo{{ID: "x", Calls: 1, Active: 0}},
+	})
+	x := New(t, WithControlURL(srv.URL), WithProxyURL(srv.URL), WithSessionID("x"), WithWait(time.Millisecond, 200*time.Millisecond))
+	rec := &fakeTB{}
+	x.t = rec
+	if x.Check(context.Background()).IsolatedFrom("y") {
+		t.Fatal("504 in-flight details should fail IsolatedFrom")
+	}
+	rec.flush()
+	joined := strings.Join(rec.messages, "\n")
+	for _, want := range []string{
+		"wait timed out on session y",
+		"session y has 1 call still in flight",
+		"call_y_live",
+		"seq=1",
+		"openai.chat",
+		InFlightStreaming,
+		"status=200",
+	} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("missing %q in:\n%s", want, joined)
+		}
+	}
+	if strings.Contains(joined, "no calls recorded") {
+		t.Fatalf("must not look empty:\n%s", joined)
+	}
+}
+
 func TestIsolatedFromOtherTimeoutActiveZeroIsIsolated(t *testing.T) {
 	yOpen := isolationCall("y", "call_y1", 1, "header", `{"messages":[{"role":"user","content":"Y opening question (nonce-quiet)"}]}`)
 	xCall := isolationCall("x", "call_x1", 1, "header", `{"messages":[{"role":"user","content":"X asks its own question"}]}`)
@@ -312,14 +358,17 @@ func TestIsolatedFromBothStreamingWaitsOther(t *testing.T) {
 }
 
 type isolationWaitStub struct {
-	x         []Call
-	y         []Call
-	yWait     []Call
-	yWaitErr  int
-	yWaitSeen int
-	sessions  []SessionInfo
-	onXWait   func()
-	onYWait   func()
+	x                []Call
+	y                []Call
+	yWait            []Call
+	yWaitErr         int
+	yWaitSeen        int
+	yWaitActive      *int
+	yWaitInFlight    []InFlightCall
+	yWaitInFlightSet bool
+	sessions         []SessionInfo
+	onXWait          func()
+	onYWait          func()
 }
 
 func newIsolationWaitServer(t *testing.T, stub isolationWaitStub) *httptest.Server {
@@ -352,10 +401,17 @@ func newIsolationWaitServer(t *testing.T, stub isolationWaitStub) *httptest.Serv
 				}
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusGatewayTimeout)
+				errBody := map[string]any{"type": "wait_timeout", "calls_seen": seen, "message": "wait timed out"}
+				if stub.yWaitActive != nil {
+					errBody["active"] = *stub.yWaitActive
+				}
+				if stub.yWaitInFlightSet {
+					errBody["in_flight"] = stub.yWaitInFlight
+				}
 				_ = json.NewEncoder(w).Encode(map[string]any{
 					"id":    "y",
 					"calls": calls,
-					"error": map[string]any{"type": "wait_timeout", "calls_seen": seen, "message": "wait timed out"},
+					"error": errBody,
 				})
 				return
 			}

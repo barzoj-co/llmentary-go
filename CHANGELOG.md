@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Bug Fixes
+
+* list still-running calls from wait 504 `error.in_flight` (DOG-38)
+
 ### Miscellaneous Chores
 
 * drop the private-repo token crutch; public GitHub Releases download anonymously and `GITHUB_TOKEN` is an optional rate-limit assist
