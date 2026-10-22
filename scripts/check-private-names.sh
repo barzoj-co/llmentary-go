@@ -28,13 +28,17 @@ scan() {
     printf '%s\n' "${hits}"
   fi
 
-  hits="$(
-    (
-      cd "${root}"
-      find . -type d -name .git -prune -o \
-        ! -name "${SELF}" ! -name '*.swp' -print
-    ) | grep -iE "${PATTERN}"
+  local paths=""
+  paths="$(
+    cd "${root}"
+    find . -type d -name .git -prune -o \
+      ! -name "${SELF}" ! -name '*.swp' -print
   )" && rc=0 || rc=$?
+  if [[ "${rc}" -ne 0 ]]; then
+    echo "private-name path scan failed (find exit ${rc})" >&2
+    return 2
+  fi
+  hits="$(grep -iE "${PATTERN}" <<<"${paths}")" && rc=0 || rc=$?
   if [[ "${rc}" -gt 1 ]]; then
     echo "private-name path scan failed (grep exit ${rc})" >&2
     return 2
