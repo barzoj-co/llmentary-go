@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.2](https://github.com/barzoj-co/llmentary-go/compare/v0.4.1...v0.4.2) (2026-10-22)
+
+
+### Bug Fixes
+
+* **deps:** bundle proxy v0.4.1 ([#31](https://github.com/barzoj-co/llmentary-go/issues/31)) ([5c015bf](https://github.com/barzoj-co/llmentary-go/commit/5c015bfcf06bdd730d3eb637d346000f9ca2c667))
+
 ## [0.4.1](https://github.com/barzoj-co/llmentary-go/compare/v0.4.0...v0.4.1) (2026-10-21)
 
 
