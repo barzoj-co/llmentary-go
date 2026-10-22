@@ -120,6 +120,9 @@ func TestDownloadReleaseUsesLlmentaryGithubToken(t *testing.T) {
 	t.Setenv("GH_TOKEN", "")
 	t.Setenv("GITHUB_TOKEN", "")
 	t.Setenv("LLMTESTLAB_REPO_TOKEN", "should-not-win")
+	if got := optionalGitHubToken(); got != "from-llmentary" {
+		t.Fatalf("optionalGitHubToken=%q", got)
+	}
 
 	archive, sum := testTarGz(t, "llmentary", []byte("payload"))
 	wantArchive := "llmentary_0.1.0_linux_amd64.tar.gz"
@@ -189,7 +192,7 @@ func TestDownloadReleaseUsesLlmentaryGithubToken(t *testing.T) {
 			t.Fatalf("expected GitHub API URL, got %s", raw)
 		}
 		if strings.Contains(raw, "/releases/download/") {
-			t.Fatalf("private download should not use browser URL %s", raw)
+			t.Fatalf("tokened download should not use browser URL %s", raw)
 		}
 	}
 }
@@ -355,6 +358,150 @@ func TestPinnedProxyReleaseAssetNames(t *testing.T) {
 	}
 }
 
+func TestOptionalGitHubToken(t *testing.T) {
+	clearGitHubTokens(t)
+	t.Setenv("LLMTESTLAB_REPO_TOKEN", "stale-pat")
+	if got := optionalGitHubToken(); got != "" {
+		t.Fatalf("stale PAT must not be consulted: %q", got)
+	}
+
+	t.Setenv("GITHUB_TOKEN", "   ")
+	t.Setenv("GH_TOKEN", "")
+	t.Setenv("LLMENTARY_GITHUB_TOKEN", "")
+	if got := optionalGitHubToken(); got != "" {
+		t.Fatalf("whitespace-only GITHUB_TOKEN must be empty: %q", got)
+	}
+
+	t.Setenv("GITHUB_TOKEN", "from-github")
+	if got := optionalGitHubToken(); got != "from-github" {
+		t.Fatalf("GITHUB_TOKEN=%q", got)
+	}
+
+	t.Setenv("GH_TOKEN", "from-gh")
+	if got := optionalGitHubToken(); got != "from-gh" {
+		t.Fatalf("GH_TOKEN should win over GITHUB_TOKEN: %q", got)
+	}
+
+	t.Setenv("LLMENTARY_GITHUB_TOKEN", "from-llmentary")
+	if got := optionalGitHubToken(); got != "from-llmentary" {
+		t.Fatalf("LLMENTARY_GITHUB_TOKEN should win: %q", got)
+	}
+}
+
+func TestDownloadReleaseAnonymousIgnoresStaleRepoToken(t *testing.T) {
+	clearGitHubTokens(t)
+	t.Setenv("LLMTESTLAB_REPO_TOKEN", "stale-pat")
+
+	archive, sum := testTarGz(t, "llmentary", []byte("anon-proxy"))
+	archiveName := "llmentary_0.1.0_linux_amd64.tar.gz"
+	var gotURLs []string
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		gotURLs = append(gotURLs, req.URL.String())
+		if auth := req.Header.Get("Authorization"); auth != "" {
+			t.Errorf("anonymous download sent Authorization=%q", auth)
+		}
+		body := []byte("not found")
+		status := http.StatusNotFound
+		switch {
+		case strings.HasSuffix(req.URL.Path, "/checksums.txt"):
+			body = []byte(sum + "  " + archiveName + "\n")
+			status = http.StatusOK
+		case strings.HasSuffix(req.URL.Path, "/"+archiveName):
+			body = archive
+			status = http.StatusOK
+		}
+		return &http.Response{
+			StatusCode: status,
+			Body:       io.NopCloser(bytes.NewReader(body)),
+			Header:     make(http.Header),
+			Request:    req,
+		}, nil
+	})}
+	path, err := DownloadRelease(context.Background(), DownloadOptions{
+		Version:    "v0.1.0",
+		DestDir:    t.TempDir(),
+		GOOS:       "linux",
+		GOARCH:     "amd64",
+		HTTPClient: client,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(got, []byte("anon-proxy")) {
+		t.Fatalf("contents=%q", got)
+	}
+	if len(gotURLs) == 0 {
+		t.Fatal("expected public download URLs")
+	}
+	for _, raw := range gotURLs {
+		if strings.Contains(raw, "api.github.com") {
+			t.Fatalf("anonymous download must not use GitHub API %s", raw)
+		}
+		if !strings.Contains(raw, "/releases/download/") {
+			t.Fatalf("anonymous download must use public release URL, got %s", raw)
+		}
+	}
+}
+
+func TestDownloadReleaseOptionalGitHubTokenUsesAPI(t *testing.T) {
+	clearGitHubTokens(t)
+	t.Setenv("GITHUB_TOKEN", "rate-limit-token")
+
+	archive, sum := testTarGz(t, "llmentary", []byte("payload"))
+	wantArchive := "llmentary_0.1.0_linux_amd64.tar.gz"
+	meta := []byte(`{"tag_name":"v0.1.0","assets":[` +
+		`{"name":"checksums.txt","url":"https://api.github.com/repos/barzoj-co/llmentary/releases/assets/1"},` +
+		`{"name":"` + wantArchive + `","url":"https://api.github.com/repos/barzoj-co/llmentary/releases/assets/2"}` +
+		`]}`)
+	var gotURLs []string
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		gotURLs = append(gotURLs, req.URL.String())
+		if auth := req.Header.Get("Authorization"); auth != "Bearer rate-limit-token" {
+			t.Errorf("Authorization=%q", auth)
+		}
+		body := []byte("not found")
+		status := http.StatusNotFound
+		switch {
+		case req.URL.Path == "/repos/barzoj-co/llmentary/releases/tags/v0.1.0":
+			body = meta
+			status = http.StatusOK
+		case strings.HasSuffix(req.URL.Path, "/releases/assets/1"):
+			body = []byte(sum + "  " + wantArchive + "\n")
+			status = http.StatusOK
+		case strings.HasSuffix(req.URL.Path, "/releases/assets/2"):
+			body = archive
+			status = http.StatusOK
+		}
+		return &http.Response{
+			StatusCode: status,
+			Body:       io.NopCloser(bytes.NewReader(body)),
+			Header:     make(http.Header),
+			Request:    req,
+		}, nil
+	})}
+	if _, err := DownloadRelease(context.Background(), DownloadOptions{
+		Version:    "v0.1.0",
+		DestDir:    t.TempDir(),
+		GOOS:       "linux",
+		GOARCH:     "amd64",
+		HTTPClient: client,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(gotURLs) == 0 {
+		t.Fatal("expected GitHub API URLs")
+	}
+	for _, raw := range gotURLs {
+		if strings.Contains(raw, "/releases/download/") {
+			t.Fatalf("optional token should use API, got %s", raw)
+		}
+	}
+}
+
 func TestDownloadReleaseDoesNotSendAmbientTokenToCustomHost(t *testing.T) {
 	t.Setenv("GITHUB_TOKEN", "ambient-secret")
 	t.Setenv("GH_TOKEN", "ambient-secret")
@@ -410,6 +557,13 @@ func TestChecksumForFile(t *testing.T) {
 	if got != sum {
 		t.Fatalf("got %s", got)
 	}
+}
+
+func clearGitHubTokens(t *testing.T) {
+	t.Helper()
+	t.Setenv("LLMENTARY_GITHUB_TOKEN", "")
+	t.Setenv("GH_TOKEN", "")
+	t.Setenv("GITHUB_TOKEN", "")
 }
 
 func testTarGz(t *testing.T, name string, payload []byte) (archive []byte, sum string) {

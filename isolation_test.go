@@ -705,7 +705,7 @@ func httpStatusFromError(err error) (int, bool) {
 }
 
 func fetchProxyIsolationVectors(ctx context.Context) (map[string][]byte, error) {
-	token := firstNonEmpty(os.Getenv("LLMENTARY_GITHUB_TOKEN"), os.Getenv("GH_TOKEN"), os.Getenv("GITHUB_TOKEN"), os.Getenv("LLMTESTLAB_REPO_TOKEN"))
+	token := optionalGitHubToken()
 	ref := isolationVectorRef()
 	return fetchGitHubIsolationDir(ctx, strings.TrimRight(defaultGitHubAPIRoot, "/"), ref, token)
 }
@@ -866,5 +866,38 @@ func TestFetchGitHubIsolationDirDeniedIsError(t *testing.T) {
 		if action, _, ok := isolationVectorDeniedDisposition(err, true); !ok || action != "fail" {
 			t.Fatalf("status %d must fail the live drift check, action=%q ok=%v", status, action, ok)
 		}
+	}
+}
+
+func TestFetchProxyIsolationVectorsUsesOptionalTokenOnly(t *testing.T) {
+	clearGitHubTokens(t)
+	t.Setenv("LLMTESTLAB_REPO_TOKEN", "stale-pat")
+	if got := optionalGitHubToken(); got != "" {
+		t.Fatalf("stale PAT must not feed isolation fetch: %q", got)
+	}
+
+	var sawAuth string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sawAuth = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	t.Cleanup(srv.Close)
+	_, err := fetchGitHubIsolationDir(context.Background(), srv.URL, ProxyVersion, optionalGitHubToken())
+	if err == nil || !strings.Contains(err.Error(), "empty") {
+		t.Fatalf("empty listing err=%v", err)
+	}
+	if sawAuth != "" {
+		t.Fatalf("anonymous isolation fetch sent Authorization=%q", sawAuth)
+	}
+
+	t.Setenv("GITHUB_TOKEN", "rate-limit-token")
+	sawAuth = ""
+	_, err = fetchGitHubIsolationDir(context.Background(), srv.URL, ProxyVersion, optionalGitHubToken())
+	if err == nil || !strings.Contains(err.Error(), "empty") {
+		t.Fatalf("empty listing with optional token err=%v", err)
+	}
+	if sawAuth != "Bearer rate-limit-token" {
+		t.Fatalf("optional token Authorization=%q", sawAuth)
 	}
 }

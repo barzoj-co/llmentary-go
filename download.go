@@ -46,9 +46,9 @@ type DownloadOptions struct {
 	DestDir string
 	// Repo is "owner/name". Defaults to barzoj-co/llmentary.
 	Repo string
-	// Token is an optional GitHub token for private releases.
-	// When empty, LLMENTARY_GITHUB_TOKEN, GH_TOKEN, GITHUB_TOKEN, then
-	// LLMTESTLAB_REPO_TOKEN are consulted.
+	// Token is an optional GitHub token used only as a rate-limit
+	// assist for public downloads. Releases are public; a token is
+	// never required. When empty, optionalGitHubToken is consulted.
 	Token string
 	// HTTPClient defaults to http.DefaultClient.
 	HTTPClient *http.Client
@@ -57,7 +57,7 @@ type DownloadOptions struct {
 	BaseURL string
 	// APIBaseURL overrides the GitHub API root. Intended for tests.
 	// Defaults to https://api.github.com. Used when a token is set and
-	// BaseURL is empty (private GitHub Releases).
+	// BaseURL is empty.
 	APIBaseURL string
 	// GOOS and GOARCH override runtime.GOOS/GOARCH.
 	GOOS   string
@@ -95,7 +95,7 @@ func DownloadRelease(ctx context.Context, opts DownloadOptions) (string, error) 
 	token := strings.TrimSpace(opts.Token)
 	// Do not send ambient GitHub tokens to a custom BaseURL (tests / mirrors).
 	if token == "" && strings.TrimSpace(opts.BaseURL) == "" {
-		token = firstNonEmpty(os.Getenv("LLMENTARY_GITHUB_TOKEN"), os.Getenv("GH_TOKEN"), os.Getenv("GITHUB_TOKEN"), os.Getenv("LLMTESTLAB_REPO_TOKEN"))
+		token = optionalGitHubToken()
 	}
 
 	sumsBody, archiveBody, err := fetchReleaseAssets(ctx, client, opts.BaseURL, opts.APIBaseURL, repo, tag, archiveName, token)
@@ -363,6 +363,12 @@ func extractZipBinary(body []byte, wanted map[string]bool) ([]byte, error) {
 		return data, nil
 	}
 	return nil, errors.New("llmentary: zip did not contain llmentary")
+}
+
+// optionalGitHubToken is an optional rate-limit token for public GitHub
+// requests. Downloads and isolation drift checks succeed without it.
+func optionalGitHubToken() string {
+	return firstNonEmpty(os.Getenv("LLMENTARY_GITHUB_TOKEN"), os.Getenv("GH_TOKEN"), os.Getenv("GITHUB_TOKEN"))
 }
 
 func firstNonEmpty(values ...string) string {

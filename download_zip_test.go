@@ -190,11 +190,16 @@ func TestDownloadReleasePublicGitHubURLs(t *testing.T) {
 	t.Setenv("LLMENTARY_GITHUB_TOKEN", "")
 	t.Setenv("GH_TOKEN", "")
 	t.Setenv("GITHUB_TOKEN", "")
-	t.Setenv("LLMTESTLAB_REPO_TOKEN", "")
+	t.Setenv("LLMTESTLAB_REPO_TOKEN", "stale-pat")
 
 	archive, sum := testTarGz(t, "llmentary", []byte("public-proxy"))
 	archiveName := "llmentary_0.1.0_linux_amd64.tar.gz"
+	var gotURLs []string
 	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		gotURLs = append(gotURLs, req.URL.String())
+		if auth := req.Header.Get("Authorization"); auth != "" {
+			t.Errorf("tokenless public download sent Authorization=%q", auth)
+		}
 		body := []byte("not found")
 		status := http.StatusNotFound
 		switch {
@@ -231,6 +236,17 @@ func TestDownloadReleasePublicGitHubURLs(t *testing.T) {
 	}
 	if !bytes.Contains(got, []byte("public-proxy")) {
 		t.Fatalf("contents=%q", got)
+	}
+	if len(gotURLs) == 0 {
+		t.Fatal("expected public download URLs")
+	}
+	for _, raw := range gotURLs {
+		if strings.Contains(raw, "api.github.com") {
+			t.Fatalf("tokenless download must not use GitHub API %s", raw)
+		}
+		if !strings.Contains(raw, "/releases/download/") {
+			t.Fatalf("tokenless download must use public release URL, got %s", raw)
+		}
 	}
 }
 

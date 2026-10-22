@@ -118,17 +118,15 @@ go test -covermode=atomic -coverprofile=coverage-unit.out ./...
 ## CI secrets and the e2e gate
 
 Secrets stay off workflow- and job-level `env:`. `OPENAI_API_KEY` is injected
-only into the live `OpenAI e2e tests` step; `LLMTESTLAB_REPO_TOKEN` is only in
-the `Install pinned proxy release` step (passed as `GH_TOKEN` for private
-GitHub Release assets; never printed or placed in a URL). The
-live `e2e` job uses the `openai-e2e` GitHub Actions environment. Maintainers
-approve that environment
-deployment on each pull request (and on `push` to `main`) before the paid
-OpenAI suite runs. Integration and mock-upstream tests do not use the
-environment and do not wait for approval. Fork PRs skip `e2e`; `e2e-gate`
-fails until a maintainer pushes the same commits to a same-repo branch. See
-[docs/ci.md](docs/ci.md) for the known `pull_request` merge-commit limitation.
-Never use `pull_request_target`.
+only into the live `OpenAI e2e tests` step. The pinned proxy install is an
+anonymous public download and does not use a GitHub PAT. The live `e2e` job
+uses the `openai-e2e` GitHub Actions environment. Maintainers approve that
+environment deployment on each pull request (and on `push` to `main`) before
+the paid OpenAI suite runs. Integration and mock-upstream tests do not use
+the environment and do not wait for approval. Fork PRs skip `e2e`; `e2e-gate`
+passes with `skipped (fork, no secrets)`. Same-repo PRs still fail the gate
+if live e2e did not run. See [docs/ci.md](docs/ci.md) for the known
+`pull_request` merge-commit limitation. Never use `pull_request_target`.
 
 ## Renovate
 

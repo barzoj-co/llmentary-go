@@ -1,18 +1,17 @@
 # Changelog
 
+## [Unreleased]
+
+### Miscellaneous Chores
+
+* drop the private-repo token crutch; public GitHub Releases download anonymously and `GITHUB_TOKEN` is an optional rate-limit assist
+
 ## [0.4.3](https://github.com/barzoj-co/llmentary-go/compare/v0.4.2...v0.4.3) (2026-10-22)
 
 
 ### Bug Fixes
 
 * wait IsolatedFrom on the other session ([#33](https://github.com/barzoj-co/llmentary-go/issues/33)) ([1a2c3a2](https://github.com/barzoj-co/llmentary-go/commit/1a2c3a20f8524a83fd8201c13478d5f9addee776))
-
-## [Unreleased]
-
-### Bug Fixes
-
-* wait IsolatedFrom on the other session so an in-flight leak is visible (DOG-37)
-* stop inventing wait-timeout `still active: 0` from settled calls (DOG-38)
 
 ## [0.4.2](https://github.com/barzoj-co/llmentary-go/compare/v0.4.1...v0.4.2) (2026-10-22)
 

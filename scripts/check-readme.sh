@@ -67,10 +67,26 @@ if grep -Eq '(^|[[:space:]])lab :=' "$README" "${ROOT}/docs/go-client.md" "${ROO
   missing=1
 fi
 
-if [[ "$readme_content" == *"LLMTESTLAB"* ]] || [[ "$readme_content" == *"CI secrets"* ]]; then
-  echo "README.md must not document CI secrets or LLMTESTLAB tokens" >&2
+if [[ "$readme_content" == *"CI secrets"* ]]; then
+  echo "README.md must not document CI secrets" >&2
   missing=1
 fi
+
+docs_without_legacy_token=(
+  "$README"
+  "${ROOT}/CONTRIBUTING.md"
+  "${ROOT}/SECURITY.md"
+  "${ROOT}/CODE_OF_CONDUCT.md"
+  "${ROOT}/docs/ci.md"
+  "${ROOT}/docs/binaries.md"
+  "${ROOT}/.github/workflows/ci.yml"
+)
+for f in "${docs_without_legacy_token[@]}"; do
+  if grep -Fq 'LLMTESTLAB' "$f"; then
+    echo "$f must not mention LLMTESTLAB tokens" >&2
+    missing=1
+  fi
+done
 
 if ! grep -Fq 'docs/go-client.md' "$README"; then
   echo "README.md must link to docs/go-client.md" >&2
