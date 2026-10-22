@@ -83,7 +83,9 @@ session that recorded calls with `expected 0 LLM calls, got N` plus the
 trace summary. `IsolatedFrom(<never-created or empty other>)` fails with
 `no calls recorded for session <id> (isolated_from needs calls on both
 sides)` unless `AllowEmpty` is set. That is an assertion, not
-`SessionNotFound`.
+`SessionNotFound`. A session id is waited with the same quiet/timeout
+as `Expect`; `WithOtherTrace` is not re-fetched. If that wait times out
+with only in-flight calls, the failure names the in-flight state.
 
 `wait` on a session that was never created (or was `DELETE`d) depends on
 `min_calls`:
@@ -115,7 +117,10 @@ if llmentary.IsWaitTimeout(err) {
 Each variable accepts a Go duration (`45s`, `200ms`) or bare seconds (`45`,
 `0.2`). A wait timeout is a clear error: `wait timed out after 30s on session
 X (k calls so far, still active: n). Raise LLMENTARY_WAIT_TIMEOUT` if the
-graph needs more time. The client HTTP timeout is `timeout + quiet + 5s` so
+graph needs more time. `still active` comes from the GET /sessions row,
+never from counting placeholder calls (those records are gone after
+proxy 0.4.1). When the row is unavailable the clause is omitted rather
+than inventing `0`. The client HTTP timeout is `timeout + quiet + 5s` so
 the request is not aborted before the proxy answers.
 
 `WithWait(quiet, timeout)` overrides the environment for one session.
@@ -225,6 +230,9 @@ lm.Expect(ctx).IsolatedFrom(other.SessionID())
 lm.Expect(ctx).IsolatedFrom(other.SessionID(), llmentary.RequirePathSource())
 lm.Expect(ctx).IsolatedFrom(other.SessionID(), llmentary.MinChars(8), llmentary.IgnoreTexts("ok"))
 ```
+
+Both sides are read with wait semantics when given as a session id; a
+pre-fetched `WithOtherTrace` is used as is.
 
 `IsolatedFrom` checks:
 

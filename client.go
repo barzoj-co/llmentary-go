@@ -174,7 +174,25 @@ func (c *Client) Wait(ctx context.Context, sessionID string, quiet, timeout time
 			// min_calls>=1 waits for a session that may still appear.
 		}
 	}
-	return nil, waitTimeoutError(sessionID, timeout, calls, minCalls, callsSeen)
+	wt := waitTimeoutError(sessionID, timeout, calls, minCalls, callsSeen)
+	if info, ok := c.sessionRow(ctx, sessionID); ok {
+		wt.Active = info.Active
+		wt.ActiveKnown = true
+	}
+	return nil, wt
+}
+
+func (c *Client) sessionRow(ctx context.Context, sessionID string) (SessionInfo, bool) {
+	list, err := c.ListSessions(ctx)
+	if err != nil {
+		return SessionInfo{}, false
+	}
+	for _, item := range list {
+		if item.ID == sessionID {
+			return item, true
+		}
+	}
+	return SessionInfo{}, false
 }
 
 func (c *Client) OTLP(ctx context.Context, sessionID string) (json.RawMessage, error) {

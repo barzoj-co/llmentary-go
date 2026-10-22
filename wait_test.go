@@ -239,8 +239,12 @@ func TestWaitTimeoutErrorMessage(t *testing.T) {
 				ID: "sess",
 				Calls: []Call{
 					{ID: "c1", Seq: 1, EndedAt: ended},
-					{ID: "c2", Seq: 2},
+					{ID: "c2", Seq: 2, EndedAt: ended},
 				},
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/sessions":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"sessions": []SessionInfo{{ID: "sess", Calls: 2, Active: 1}},
 			})
 		default:
 			w.WriteHeader(http.StatusNotFound)
@@ -259,6 +263,44 @@ func TestWaitTimeoutErrorMessage(t *testing.T) {
 	want := "wait timed out after 30s on session sess (2 calls so far, still active: 1). Raise LLMENTARY_WAIT_TIMEOUT"
 	if !strings.Contains(err.Error(), want) {
 		t.Fatalf("timeout error = %q, want substring %q", err, want)
+	}
+}
+
+func TestWaitTimeoutMessageOmitsInventedActiveZero(t *testing.T) {
+	ended := time.Now()
+	settled := []Call{{ID: "c1", Seq: 1, EndedAt: ended}, {ID: "c2", Seq: 2, EndedAt: ended}}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/sessions/sess/wait":
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusGatewayTimeout)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"id":    "sess",
+				"calls": settled,
+				"error": map[string]any{"type": "wait_timeout", "calls_seen": 2, "message": "wait timed out"},
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/sessions/sess":
+			_ = json.NewEncoder(w).Encode(sessionPayload{ID: "sess", Calls: settled})
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	c, err := NewClient(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = c.Wait(context.Background(), "sess", DefaultWaitQuiet, time.Second)
+	if !IsWaitTimeout(err) {
+		t.Fatalf("err=%v", err)
+	}
+	msg := err.Error()
+	if strings.Contains(msg, "still active: 0") {
+		t.Fatalf("must not invent still active: 0 from settled calls: %q", msg)
+	}
+	if !strings.Contains(msg, "2 calls so far") || !strings.Contains(msg, "wait timed out") {
+		t.Fatalf("timeout error = %q", msg)
 	}
 }
 
