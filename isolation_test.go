@@ -340,6 +340,38 @@ func TestIsolatedFromFixtures(t *testing.T) {
 		}
 	})
 
+	t.Run("later_call_replayed_foreign_text", func(t *testing.T) {
+		first := isolationCall("sess-x", "call_x1", 1, "", `{
+			"messages":[
+				{"role":"user","content":"Secret thread from the other app"},
+				{"role":"assistant","content":"I need more data."},
+				{"role":"user","content":"Continue from the saved thread."}
+			]
+		}`)
+		second := isolationCall("sess-x", "call_x2", 2, "", `{
+			"messages":[
+				{"role":"user","content":"Secret thread from the other app"},
+				{"role":"assistant","content":"I need more data."},
+				{"role":"user","content":"Continue from the saved thread."},
+				{"role":"user","content":"And one more question from X"}
+			]
+		}`)
+		y := isolationCall("sess-y", "call_y1", 1, "", `{"messages":[{"role":"user","content":"Secret thread from the other app"}]}`)
+		full := Trace{SessionID: "sess-x", Calls: []Call{first, second}}
+		tb := &fakeTB{}
+		if full.Query().Since(Mark{Seq: 1}).Check(tb).IsolatedFrom("sess-y", WithOtherTrace(Trace{SessionID: "sess-y", Calls: []Call{y}})) {
+			t.Fatal("later-call window still sees replayed foreign history")
+		}
+		joined := strings.Join(tb.messages, "\n")
+		if !strings.Contains(joined, "user text 'Secret thread from the other app'") ||
+			!strings.Contains(joined, "appears in session sess-x #2 (call_x2)") {
+			t.Fatalf("want call_x2 attribution:\n%s", joined)
+		}
+		if strings.Contains(joined, "#1 (call_x1)") {
+			t.Fatalf("Since window must not attribute the leak to call_x1:\n%s", joined)
+		}
+	})
+
 	t.Run("ignore_texts", func(t *testing.T) {
 		origin := isolationCall("a", "call_a", 1, "", `{"messages":[{"role":"user","content":"What is my biological age?"}]}`)
 		replay := isolationCall("b", "call_b", 1, "", `{

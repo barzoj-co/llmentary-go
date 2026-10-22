@@ -54,6 +54,32 @@ func TestExpectAllowEmptyCallCountZero(t *testing.T) {
 	}
 }
 
+func TestIsolatedFromUnknownOtherIDClientLookup(t *testing.T) {
+	srv := newZeroCallServer(t, map[string][]Call{
+		"sess-x": {{
+			ID:         "call_x1",
+			SessionID:  "sess-x",
+			Seq:        1,
+			RawRequest: []byte(`{"messages":[{"role":"user","content":"What is my biological age?"}]}`),
+		}},
+	})
+	lm := New(t, WithControlURL(srv.URL), WithProxyURL(srv.URL), WithSessionID("sess-x"), WithWait(time.Millisecond, time.Second))
+	rec := &fakeTB{}
+	lm.t = rec
+	if lm.Check(context.Background()).IsolatedFrom("never-created-session") {
+		t.Fatal("IsolatedFrom(never-created-session) should fail without WithOtherTrace")
+	}
+	rec.flush()
+	joined := strings.Join(rec.messages, "\n")
+	if !strings.Contains(joined, "no calls recorded for session never-created-session") ||
+		!strings.Contains(joined, "isolated_from needs calls on both sides") {
+		t.Fatalf("client lookup unknown other:\n%s", joined)
+	}
+	if strings.Contains(joined, "needs WithOtherTrace") {
+		t.Fatalf("should use client lookup, not require WithOtherTrace:\n%s", joined)
+	}
+}
+
 func TestIsolatedFromNeverCreatedSession(t *testing.T) {
 	srv := newZeroCallServer(t, map[string][]Call{
 		"a": {{
