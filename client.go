@@ -108,7 +108,7 @@ func Source(source string) ListSessionsOption {
 	return func(o *listSessionsOptions) { o.Source = source }
 }
 
-// Config is GET /config, including the proxy version and effective upstreams.
+// Config is GET /config, including version, upstreams, spec targets, and timeouts.
 func (c *Client) Config(ctx context.Context) (*ProxyConfig, error) {
 	var cfg ProxyConfig
 	if err := c.getJSON(ctx, "/config", nil, &cfg); err != nil {

@@ -101,6 +101,34 @@ func WithUpstream(spec string) StartOption {
 	return func(c *startConfig) { c.upstreams = append(c.upstreams, spec) }
 }
 
+// WithSpecTarget adds a --spec-target name=openai or
+// name=openai-compatible mapping.
+func WithSpecTarget(spec string) StartOption {
+	return WithExtraArgs("--spec-target", spec)
+}
+
+// WithUpstreamHeaderTimeout sets --upstream-header-timeout (0 disables).
+func WithUpstreamHeaderTimeout(d time.Duration) StartOption {
+	return WithExtraArgs("--upstream-header-timeout", formatUpstreamTimeoutDuration(d))
+}
+
+// WithUpstreamIdleTimeout sets --upstream-idle-timeout (0 disables).
+func WithUpstreamIdleTimeout(d time.Duration) StartOption {
+	return WithExtraArgs("--upstream-idle-timeout", formatUpstreamTimeoutDuration(d))
+}
+
+func formatUpstreamTimeoutDuration(d time.Duration) string {
+	if d < 0 {
+		d = 0
+	}
+	return d.String()
+}
+
+// WithAllowPathPrefix adds a --allow-path-prefix segment.
+func WithAllowPathPrefix(prefix string) StartOption {
+	return WithExtraArgs("--allow-path-prefix", prefix)
+}
+
 // WithExtraArgs appends extra CLI arguments.
 func WithExtraArgs(args ...string) StartOption {
 	return func(c *startConfig) { c.extraArgs = append(c.extraArgs, args...) }

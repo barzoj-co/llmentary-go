@@ -135,7 +135,7 @@ func TestReleaseAssetURLAndRedactedMalformed(t *testing.T) {
 	if got != want {
 		t.Fatalf("public asset URL=%q want %q", got, want)
 	}
-	if strings.Contains(got, "v0.4.0") {
+	if strings.Contains(got, "v0.4.1") {
 		t.Fatalf("public asset URL still names previous pin: %q", got)
 	}
 	leaked := redactedURL("not a url?token=secret")

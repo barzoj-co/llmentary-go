@@ -85,8 +85,11 @@ func TestListSessionsAndConfig(t *testing.T) {
 			})
 		case "/config":
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"version":   "0.2.0-test",
-				"upstreams": map[string]string{"openai": "https://api.openai.com/v1"},
+				"version":                 "0.2.0-test",
+				"upstreams":               map[string]string{"openai": "https://api.openai.com/v1"},
+				"spec_targets":            map[string]string{"openai": "openai"},
+				"upstream_header_timeout": "0s",
+				"upstream_idle_timeout":   "0s",
 			})
 		default:
 			t.Errorf("unexpected %s", r.URL.Path)
@@ -111,6 +114,12 @@ func TestListSessionsAndConfig(t *testing.T) {
 	}
 	if cfg.Version != "0.2.0-test" || cfg.Upstreams["openai"] != "https://api.openai.com/v1" {
 		t.Fatalf("config=%+v", cfg)
+	}
+	if cfg.SpecTarget("openai") != SpecTargetOpenAI {
+		t.Fatalf("spec_targets=%v", cfg.SpecTargets)
+	}
+	if header, ok, err := cfg.HeaderTimeout(); err != nil || !ok || header != 0 {
+		t.Fatalf("header timeout=%v ok=%v err=%v", header, ok, err)
 	}
 	version, err := c.Version(context.Background())
 	if err != nil || version != "0.2.0-test" {

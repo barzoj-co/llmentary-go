@@ -108,6 +108,15 @@ if llmentary.IsWaitTimeout(err) {
 ```
 
 `lm.Version(ctx)` / `client.Version(ctx)` reads `GET /config` `version`.
+`client.Config(ctx)` also types `spec_targets` (per-upstream `openai` or
+`openai-compatible`) and the optional `upstream_header_timeout` /
+`upstream_idle_timeout` Go duration strings (`0s` when off). Use
+`cfg.SpecTarget("openai")`, `cfg.HeaderTimeout()`, and `cfg.IdleTimeout()`.
+Per-call `normalized.validation.target` is `Call.SpecTarget()`. A header
+timeout records `http_status` 504, `error.normalized=upstream_timeout`,
+`error.source=proxy`, and `upstream_called` from whether the outbound
+request was written. An idle timeout keeps the upstream status, sets
+`error.normalized=upstream_idle_timeout`, and never `error.mid_stream`.
 
 | Setting | Default | Environment variable |
 |---|---|---|
@@ -312,7 +321,7 @@ not checked — 401s and client aborts), `N violations`, `not checked`,
 
 | Field | Meaning |
 |---|---|
-| `validation` | Metadata: mode, profile, spec SHA, request/response checked, skipped reason |
+| `validation` | Metadata: mode, profile, target (`openai` / `openai-compatible`), spec SHA, request/response checked, skipped reason |
 | `spec_violations` | Findings. `[]` = clean. Absent = not checked |
 | `ignored_fields` | Vendor keys the proxy ignored (for example `enumDescriptions`) |
 

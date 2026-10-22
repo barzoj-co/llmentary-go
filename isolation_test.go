@@ -1016,7 +1016,8 @@ func isolationTestTarGz(t *testing.T, files map[string][]byte) []byte {
 	var buf bytes.Buffer
 	gz := gzip.NewWriter(&buf)
 	tw := tar.NewWriter(gz)
-	prefix := "llmentary-0.4.1/testdata/isolation/"
+	_, version := normalizeReleaseVersion(ProxyVersion)
+	prefix := "llmentary-" + version + "/testdata/isolation/"
 	if err := tw.WriteHeader(&tar.Header{Name: prefix, Typeflag: tar.TypeDir, Mode: 0o755}); err != nil {
 		t.Fatal(err)
 	}
