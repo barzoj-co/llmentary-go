@@ -8,18 +8,6 @@
 * fetch isolation vectors from the public GitHub archive ([#38](https://github.com/barzoj-co/llmentary-go/issues/38)) ([6dfa7be](https://github.com/barzoj-co/llmentary-go/commit/6dfa7be82d07721d059eaaa8f53a619a86a2beb1))
 * list still-running calls from wait 504 ([#37](https://github.com/barzoj-co/llmentary-go/issues/37)) ([f962a1d](https://github.com/barzoj-co/llmentary-go/commit/f962a1d24f743c579e126958c49b0566b8aa5c28))
 
-## [Unreleased]
-
-### Bug Fixes
-
-* list still-running calls from wait 504 `error.in_flight` (DOG-38)
-* fetch pinned isolation vectors from the public GitHub archive instead of the Contents API
-
-### Miscellaneous Chores
-
-* drop the private-repo token crutch; public GitHub Releases download anonymously and `GITHUB_TOKEN` is an optional rate-limit assist
-* genericize private project names in spec fixtures and comments
-
 ## [0.4.3](https://github.com/barzoj-co/llmentary-go/compare/v0.4.2...v0.4.3) (2026-10-22)
 
 
