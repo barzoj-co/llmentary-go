@@ -266,6 +266,50 @@ func TestWaitTimeoutErrorMessage(t *testing.T) {
 	}
 }
 
+func TestWaitTimeoutSessionRowLookupIsBounded(t *testing.T) {
+	started := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/sessions/sess/wait":
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusGatewayTimeout)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"id":    "sess",
+				"calls": []Call{{ID: "c1", Seq: 1, EndedAt: time.Now()}},
+				"error": map[string]any{"type": "wait_timeout", "calls_seen": 1, "message": "wait timed out"},
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/sessions":
+			close(started)
+			<-r.Context().Done()
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	c, err := NewClient(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now()
+	_, err = c.Wait(context.Background(), "sess", time.Millisecond, 50*time.Millisecond)
+	elapsed := time.Since(start)
+	if !IsWaitTimeout(err) {
+		t.Fatalf("err=%v", err)
+	}
+	if strings.Contains(err.Error(), "still active:") {
+		t.Fatalf("hung list must not invent active: %q", err)
+	}
+	if elapsed > 8*time.Second {
+		t.Fatalf("sessionRow lookup hung for %s", elapsed)
+	}
+	select {
+	case <-started:
+	default:
+		t.Fatal("GET /sessions was not attempted")
+	}
+}
+
 func TestWaitTimeoutMessageOmitsInventedActiveZero(t *testing.T) {
 	ended := time.Now()
 	settled := []Call{{ID: "c1", Seq: 1, EndedAt: ended}, {ID: "c2", Seq: 2, EndedAt: ended}}

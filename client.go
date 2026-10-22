@@ -175,7 +175,10 @@ func (c *Client) Wait(ctx context.Context, sessionID string, quiet, timeout time
 		}
 	}
 	wt := waitTimeoutError(sessionID, timeout, calls, minCalls, callsSeen)
-	if info, ok := c.sessionRow(ctx, sessionID); ok {
+	rowCtx, rowCancel := context.WithTimeout(ctx, waitHTTPPadding)
+	info, ok := c.sessionRow(rowCtx, sessionID)
+	rowCancel()
+	if ok {
 		wt.Active = info.Active
 		wt.ActiveKnown = true
 	}

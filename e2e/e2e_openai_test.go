@@ -1147,7 +1147,6 @@ func TestE2EIsolatedFromOtherInFlightTimeout(t *testing.T) {
 	if lmFail.Check(ctx).IsolatedFrom(lmY.SessionID()) {
 		t.Fatal("IsolatedFrom should fail while Y is only in flight")
 	}
-	rec.flush()
 	joined := strings.Join(rec.messages, "\n")
 	if !strings.Contains(joined, "wait timed out on session "+lmY.SessionID()) ||
 		!strings.Contains(joined, "still in flight") {
@@ -1162,6 +1161,8 @@ func TestE2EIsolatedFromOtherInFlightTimeout(t *testing.T) {
 	if !lmOK.Check(ctx, llmentary.AllowEmpty()).IsolatedFrom(lmY.SessionID()) {
 		t.Fatalf("AllowEmpty should pass with 0 settled on Y: %v", ok.messages)
 	}
+	rec.flush()
+	ok.flush()
 	reqCancel()
 	<-done
 }
