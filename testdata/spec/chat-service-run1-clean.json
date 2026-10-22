@@ -1,6 +1,6 @@
 {
   "id": "call_1",
-  "session_id": "chatservice-run1",
+  "session_id": "chat-service-run1",
   "seq": 1,
   "provider": "openrouter",
   "api_family": "openai.chat",

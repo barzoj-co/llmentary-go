@@ -62,6 +62,8 @@ actionlint
 ./scripts/check-gitleaks-config.sh --self-test
 ./scripts/check-readme.sh
 ./scripts/check-mit-docs.sh
+./scripts/check-private-names.sh
+./scripts/check-private-names.sh --self-test
 ```
 
 Install `actionlint` from the [rhysd/actionlint releases](https://github.com/rhysd/actionlint/releases)
