@@ -257,4 +257,19 @@ func TestStartTimeoutAndSpecTargetArgs(t *testing.T) {
 			t.Fatalf("args %v missing %q", args, want)
 		}
 	}
+
+	sub := startConfig{}
+	WithUpstreamHeaderTimeout(250 * time.Microsecond)(&sub)
+	WithUpstreamIdleTimeout(-time.Second)(&sub)
+	subArgs := proxyArgs("127.0.0.1:7777", "127.0.0.1:7778", "", nil, sub.extraArgs)
+	subJoined := strings.Join(subArgs, " ")
+	if !strings.Contains(subJoined, "250µs") {
+		t.Fatalf("sub-millisecond header timeout lost: %v", subArgs)
+	}
+	if !strings.Contains(subJoined, "--upstream-idle-timeout") || !strings.Contains(subJoined, "0s") {
+		t.Fatalf("negative idle timeout should clamp to 0s: %v", subArgs)
+	}
+	if formatWaitDuration(250*time.Microsecond) != "0s" {
+		t.Fatal("formatWaitDuration must still round sub-ms wait values to 0s")
+	}
 }

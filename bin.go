@@ -109,12 +109,19 @@ func WithSpecTarget(spec string) StartOption {
 
 // WithUpstreamHeaderTimeout sets --upstream-header-timeout (0 disables).
 func WithUpstreamHeaderTimeout(d time.Duration) StartOption {
-	return WithExtraArgs("--upstream-header-timeout", formatWaitDuration(d))
+	return WithExtraArgs("--upstream-header-timeout", formatUpstreamTimeoutDuration(d))
 }
 
 // WithUpstreamIdleTimeout sets --upstream-idle-timeout (0 disables).
 func WithUpstreamIdleTimeout(d time.Duration) StartOption {
-	return WithExtraArgs("--upstream-idle-timeout", formatWaitDuration(d))
+	return WithExtraArgs("--upstream-idle-timeout", formatUpstreamTimeoutDuration(d))
+}
+
+func formatUpstreamTimeoutDuration(d time.Duration) string {
+	if d < 0 {
+		d = 0
+	}
+	return d.String()
 }
 
 // WithAllowPathPrefix adds a --allow-path-prefix segment.
