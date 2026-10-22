@@ -5,6 +5,7 @@ package llmentary
 import (
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -24,9 +25,9 @@ func loadSpecCall(t *testing.T, name string) Call {
 }
 
 func TestSpecAccessorsGoldenPayloads(t *testing.T) {
-	clean := loadSpecCall(t, "chatservice-run1-clean.json")
+	clean := loadSpecCall(t, "chat-service-run1-clean.json")
 	if clean.Validation() == nil {
-		t.Fatal("chatservice run-1 fixture must expose validation metadata")
+		t.Fatal("chat-service run-1 fixture must expose validation metadata")
 	}
 	if clean.Validation().Mode != "warn" || clean.Validation().Profile != "relaxed" {
 		t.Fatalf("validation=%+v", clean.Validation())
@@ -36,7 +37,7 @@ func TestSpecAccessorsGoldenPayloads(t *testing.T) {
 		t.Fatal("spec_violations:[] must count as checked")
 	}
 	if len(findings) != 0 {
-		t.Fatalf("chatservice run-1 must read as clean, got %#v", findings)
+		t.Fatalf("chat-service run-1 must read as clean, got %#v", findings)
 	}
 
 	absent := loadSpecCall(t, "not-checked.json")
@@ -64,9 +65,9 @@ func TestSpecAccessorsGoldenPayloads(t *testing.T) {
 }
 
 func TestNoSpecViolationsContract(t *testing.T) {
-	clean := Trace{SessionID: "s", Calls: []Call{loadSpecCall(t, "chatservice-run1-clean.json")}}
+	clean := Trace{SessionID: "s", Calls: []Call{loadSpecCall(t, "chat-service-run1-clean.json")}}
 	if !(&Assertions{t: t, trace: clean, fatal: true}).NoSpecViolations() {
-		t.Fatal("clean chatservice payload should pass")
+		t.Fatal("clean chat-service payload should pass")
 	}
 
 	violations := Trace{SessionID: "s", Calls: []Call{loadSpecCall(t, "violations.json")}}
@@ -144,12 +145,12 @@ func TestPathMatchesWholeSegments(t *testing.T) {
 }
 
 func TestNoIgnoredFieldsContract(t *testing.T) {
-	clean := Trace{SessionID: "s", Calls: []Call{loadSpecCall(t, "chatservice-run1-clean.json")}}
+	clean := Trace{SessionID: "s", Calls: []Call{loadSpecCall(t, "chat-service-run1-clean.json")}}
 	ignored := Trace{SessionID: "s", Calls: []Call{loadSpecCall(t, "ignored-fields.json")}}
 	off := Trace{SessionID: "s", Calls: []Call{loadSpecCall(t, "not-checked.json")}}
 
 	if !(&Assertions{t: t, trace: clean, fatal: true}).NoIgnoredFields() {
-		t.Fatal("clean chatservice payload should pass NoIgnoredFields")
+		t.Fatal("clean chat-service payload should pass NoIgnoredFields")
 	}
 	tb := &fakeTB{}
 	(&Assertions{t: tb, trace: ignored}).NoIgnoredFields()
@@ -168,7 +169,7 @@ func TestNoIgnoredFieldsContract(t *testing.T) {
 
 func TestTraceSpecViolationsAndSummary(t *testing.T) {
 	trace := Trace{SessionID: "s", Calls: []Call{
-		loadSpecCall(t, "chatservice-run1-clean.json"),
+		loadSpecCall(t, "chat-service-run1-clean.json"),
 		loadSpecCall(t, "violations.json"),
 		loadSpecCall(t, "not-checked.json"),
 	}}
@@ -194,7 +195,7 @@ func TestSpecStatusLabelRequestOnly(t *testing.T) {
 		t.Fatalf("request_only label=%q", got)
 	}
 
-	clean := loadSpecCall(t, "chatservice-run1-clean.json")
+	clean := loadSpecCall(t, "chat-service-run1-clean.json")
 	if got := clean.SpecStatusLabel(); got != "clean" {
 		t.Fatalf("clean label=%q", got)
 	}
@@ -230,6 +231,18 @@ func TestSummaryOmitsStatusZeroOnAbort(t *testing.T) {
 	}
 	if !strings.Contains(summary, "spec=request_only") || !strings.Contains(summary, "client_aborted") {
 		t.Fatalf("abort summary:\n%s", summary)
+	}
+}
+
+func TestSpecFixturesUseGenericServiceNames(t *testing.T) {
+	clean := loadSpecCall(t, "chat-service-run1-clean.json")
+	if clean.SessionID != "chat-service-run1" {
+		t.Fatalf("session_id=%q", clean.SessionID)
+	}
+	cmd := exec.Command("bash", filepath.Join("scripts", "check-private-names.sh"))
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("check-private-names.sh: %v\n%s", err, out)
 	}
 }
 

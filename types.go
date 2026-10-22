@@ -166,7 +166,7 @@ type Normalized struct {
 	ParserWarnings     []string        `json:"parser_warnings,omitempty"`
 	Raw                json.RawMessage `json:"raw,omitempty"`
 	// Validation is per-call spec-check metadata. It is not a finding list.
-	// Empty spec_violations with validation present is clean (chatservice run 1).
+	// Empty spec_violations with validation present is clean.
 	Validation *Validation `json:"validation,omitempty"`
 	// SpecViolations is a pointer so JSON absent (not checked) differs from [].
 	SpecViolations *[]SpecViolation `json:"spec_violations,omitempty"`

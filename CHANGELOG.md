@@ -10,6 +10,7 @@
 ### Miscellaneous Chores
 
 * drop the private-repo token crutch; public GitHub Releases download anonymously and `GITHUB_TOKEN` is an optional rate-limit assist
+* genericize private project names in spec fixtures and comments
 
 ## [0.4.3](https://github.com/barzoj-co/llmentary-go/compare/v0.4.2...v0.4.3) (2026-10-22)
 
