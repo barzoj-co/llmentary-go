@@ -253,7 +253,7 @@ func (a *Assertions) otherInFlightFailure(otherSessionID string, settled int) (s
 	if a == nil || !a.otherWaitTimedOut {
 		return "", false
 	}
-	if a.otherWaitActiveKnown && a.otherWaitActive == 0 && settled == 0 {
+	if a.otherWaitActiveKnown && a.otherWaitActive == 0 {
 		return "", false
 	}
 	n := a.otherWaitActive

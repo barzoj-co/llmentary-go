@@ -223,6 +223,61 @@ func TestIsolatedFromOtherTimeoutKeepsSettledCalls(t *testing.T) {
 	}
 }
 
+func TestIsolatedFromOtherTimeoutActiveZeroIsIsolated(t *testing.T) {
+	yOpen := isolationCall("y", "call_y1", 1, "header", `{"messages":[{"role":"user","content":"Y opening question (nonce-quiet)"}]}`)
+	xCall := isolationCall("x", "call_x1", 1, "header", `{"messages":[{"role":"user","content":"X asks its own question"}]}`)
+	srv := newIsolationWaitServer(t, isolationWaitStub{
+		x:         []Call{xCall},
+		yWait:     []Call{yOpen},
+		yWaitErr:  http.StatusGatewayTimeout,
+		yWaitSeen: 1,
+		sessions: []SessionInfo{
+			{ID: "x", Calls: 1, Active: 0},
+			{ID: "y", Calls: 1, Active: 0},
+		},
+	})
+	x := New(t, WithControlURL(srv.URL), WithProxyURL(srv.URL), WithSessionID("x"), WithWait(time.Millisecond, 200*time.Millisecond))
+	tb := &fakeTB{}
+	x.t = tb
+	if !x.Check(context.Background()).IsolatedFrom("y") {
+		t.Fatalf("timeout with Active=0 and isolated settled calls should pass: %v", tb.messages)
+	}
+
+	secret := "Y follow-up that X must never see (nonce-quiet-leak)"
+	yLeak := isolationCall("y", "call_y2", 2, "header", `{"messages":[{"role":"user","content":"`+secret+`"}]}`)
+	xReplay := isolationCall("x", "call_x2", 1, "header", `{
+		"messages":[
+			{"role":"user","content":"`+secret+`"},
+			{"role":"assistant","content":"ok"},
+			{"role":"user","content":"X asks its own question"}
+		]
+	}`)
+	leakSrv := newIsolationWaitServer(t, isolationWaitStub{
+		x:         []Call{xReplay},
+		yWait:     []Call{yOpen, yLeak},
+		yWaitErr:  http.StatusGatewayTimeout,
+		yWaitSeen: 2,
+		sessions: []SessionInfo{
+			{ID: "x", Calls: 1, Active: 0},
+			{ID: "y", Calls: 2, Active: 0},
+		},
+	})
+	x2 := New(t, WithControlURL(leakSrv.URL), WithProxyURL(leakSrv.URL), WithSessionID("x"), WithWait(time.Millisecond, 200*time.Millisecond))
+	rec := &fakeTB{}
+	x2.t = rec
+	if x2.Check(context.Background()).IsolatedFrom("y") {
+		t.Fatal("settled leak must still fail when Active=0")
+	}
+	rec.flush()
+	joined := strings.Join(rec.messages, "\n")
+	if !strings.Contains(joined, secret) || !strings.Contains(joined, "also introduced by") {
+		t.Fatalf("want leak, got:\n%s", joined)
+	}
+	if strings.Contains(joined, "still in flight") {
+		t.Fatalf("Active=0 must not claim in-flight:\n%s", joined)
+	}
+}
+
 func TestIsolatedFromBothStreamingWaitsOther(t *testing.T) {
 	xCall := isolationCall("x", "call_x1", 1, "header", `{"messages":[{"role":"user","content":"X streaming question about barges"}]}`)
 	yCall := isolationCall("y", "call_y1", 1, "header", `{"messages":[{"role":"user","content":"Y streaming question about weather"}]}`)
