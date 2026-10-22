@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1](https://github.com/barzoj-co/llmentary-go/compare/v0.5.0...v0.5.1) (2026-10-22)
+
+
+### Bug Fixes
+
+* honor ignored_fields context and count committed calls ([#43](https://github.com/barzoj-co/llmentary-go/issues/43)) ([adfc246](https://github.com/barzoj-co/llmentary-go/commit/adfc246dc56d43bcfb5e6539ec0a4e5e0ee72505))
+
 ## [Unreleased]
 
 ### Bug Fixes
