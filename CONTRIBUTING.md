@@ -91,7 +91,8 @@ changelog PR. Tags are plain `vX.Y.Z` on the root module (`include-component-in-
 is false); `examples/go` and `e2e` are not tagged. The first release is forced to
 `0.1.0` via `initial-version` in `release-please-config.json` (Go modules stay on
 the v0 import path). That key only applies when no prior tag exists and can stay
-after `v0.1.0`.
+after `v0.1.0`. While the module is `0.x`, `feat:` is a patch
+(`bump-patch-for-minor-pre-major`) so the next feature is `0.5.1`, not `0.6.0`.
 
 Coverage is enforced in the required `test` job, not by Codecov. The job merges
 `coverage-unit.out` with the integration profile (`examples/go` against the
