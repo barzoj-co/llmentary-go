@@ -5,6 +5,7 @@ package llmentary
 import (
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -238,31 +239,10 @@ func TestSpecFixturesUseGenericServiceNames(t *testing.T) {
 	if clean.SessionID != "chat-service-run1" {
 		t.Fatalf("session_id=%q", clean.SessionID)
 	}
-	if _, err := os.Stat(filepath.Join("testdata", "spec", "chat"+"service-run1-clean.json")); err == nil {
-		t.Fatal("legacy private fixture filename must be gone")
-	}
-	entries, err := os.ReadDir(filepath.Join("testdata", "spec"))
+	cmd := exec.Command("bash", filepath.Join("scripts", "check-private-names.sh"))
+	out, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Fatal(err)
-	}
-	banned := []string{"heal" + "sens", "live" + "kit", "chat" + "service"}
-	for _, e := range entries {
-		lower := strings.ToLower(e.Name())
-		for _, needle := range banned {
-			if strings.Contains(lower, needle) {
-				t.Fatalf("testdata/spec/%s still uses private name %q", e.Name(), needle)
-			}
-		}
-		data, err := os.ReadFile(filepath.Join("testdata", "spec", e.Name()))
-		if err != nil {
-			t.Fatal(err)
-		}
-		body := strings.ToLower(string(data))
-		for _, needle := range banned {
-			if strings.Contains(body, needle) {
-				t.Fatalf("testdata/spec/%s content still uses private name %q", e.Name(), needle)
-			}
-		}
+		t.Fatalf("check-private-names.sh: %v\n%s", err, out)
 	}
 }
 

@@ -4,7 +4,6 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SELF="$(basename "${BASH_SOURCE[0]}")"
 
 # SHA-256 hex of each banned lowercase identifier (no plaintext needles).
 BANNED_HASHES="$(cat <<'EOF'
@@ -18,7 +17,6 @@ scan() {
   local root="$1"
   local extra="${2-}"
   PRIVATE_NAME_ROOT="${root}" \
-    PRIVATE_NAME_SELF="${SELF}" \
     PRIVATE_NAME_BANNED="${BANNED_HASHES}" \
     PRIVATE_NAME_EXTRA="${extra}" \
     python3 - <<'PY'
@@ -51,7 +49,6 @@ def load_hashes(raw: str) -> set[str]:
 
 
 root = os.environ["PRIVATE_NAME_ROOT"]
-self_name = os.environ["PRIVATE_NAME_SELF"]
 banned = load_hashes(os.environ.get("PRIVATE_NAME_BANNED", ""))
 banned |= load_hashes(os.environ.get("PRIVATE_NAME_EXTRA", ""))
 if not banned:
@@ -75,7 +72,7 @@ try:
         dirnames[:] = [d for d in dirnames if d != ".git"]
         rel_dir = os.path.relpath(dirpath, root)
         for name in dirnames + filenames:
-            if name in {self_name, ".git"} or name.endswith(".swp"):
+            if name == ".git" or name.endswith(".swp"):
                 continue
             rel = name if rel_dir == "." else os.path.join(rel_dir, name)
             for tok in tokens(rel.replace("\\", "/")):
@@ -83,7 +80,7 @@ try:
                     hits.append(rel)
                     break
         for name in filenames:
-            if name in {self_name} or name.endswith(".swp"):
+            if name.endswith(".swp"):
                 continue
             path = os.path.join(dirpath, name)
             rel = name if rel_dir == "." else os.path.join(rel_dir, name)
@@ -125,6 +122,8 @@ self_test() {
   printf '%s\n' 'session_id: bannedfixturetoken-run1' >"${tmp}/bad/legacy.txt"
   printf '%s\n' 'BannedFixtureToken-demo' >"${tmp}/bad/voice.txt"
   printf '%s\n' 'ok' >"${tmp}/badpath/bannedfixturetoken-run1.json"
+  mkdir -p "${tmp}/selfname"
+  printf '%s\n' 'bannedfixturetoken' >"${tmp}/selfname/check-private-names.sh"
 
   hits="$(scan "${tmp}/ok" "${extra}")"
   if [[ -n "${hits}" ]]; then
@@ -152,6 +151,13 @@ self_test() {
   hits="$(scan "${tmp}/badpath" "${extra}")"
   if ! grep -Fq 'bannedfixturetoken-run1.json' <<<"${hits}"; then
     echo "self-test: expected path-name hit" >&2
+    echo "${hits}" >&2
+    failed=1
+  fi
+
+  hits="$(scan "${tmp}/selfname" "${extra}")"
+  if ! grep -Fq 'check-private-names.sh:1' <<<"${hits}"; then
+    echo "self-test: expected hit inside same-basename file" >&2
     echo "${hits}" >&2
     failed=1
   fi
@@ -192,4 +198,4 @@ if [[ -n "${hits}" ]]; then
   exit 1
 fi
 
-echo "no private project names outside ${SELF}"
+echo "no private project names"
