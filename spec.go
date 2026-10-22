@@ -194,10 +194,11 @@ func (a *Assertions) assertNoFindings(spec bool, opts ...SpecOption) bool {
 		}
 		checked++
 		for _, finding := range findings {
-			if skipSpecFinding(finding.Side, finding.Path, finding.Pointer, firstNonEmpty(finding.Keyword, finding.Kind), options) {
+			side := finding.FilterSide()
+			if skipSpecFinding(side, finding.Path, finding.Pointer, firstNonEmpty(finding.Keyword, finding.Kind), options) {
 				continue
 			}
-			lines = append(lines, formatSpecFinding(call, finding.Side, finding.Path, finding.Pointer, firstNonEmpty(finding.Keyword, finding.Kind), finding.Message))
+			lines = append(lines, formatSpecFinding(call, side, finding.Path, finding.Pointer, firstNonEmpty(finding.Keyword, finding.Kind), finding.Message))
 		}
 	}
 	if checked == 0 {
@@ -236,8 +237,11 @@ func selectSpecCalls(calls []Call, options specOptions) ([]Call, error) {
 }
 
 func skipSpecFinding(side, path, pointer, keyword string, options specOptions) bool {
-	if options.Side != "" && !strings.EqualFold(side, options.Side) {
-		return true
+	if options.Side != "" {
+		// Empty side/context is fail-closed: a filter must not skip the entry.
+		if side != "" && !strings.EqualFold(side, options.Side) {
+			return true
+		}
 	}
 	for _, ignore := range options.IgnorePaths {
 		if pathMatches(path, pointer, ignore) {

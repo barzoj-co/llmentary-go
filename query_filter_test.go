@@ -7,6 +7,35 @@ import (
 	"testing"
 )
 
+func TestQueryCommittedAndAborted(t *testing.T) {
+	t.Parallel()
+	retry := 1
+	trace := Trace{SessionID: "mixed", Calls: []Call{
+		{ID: "ok", Seq: 1, HTTPStatus: 200},
+		{ID: "barge", Seq: 2, HTTPStatus: 200, ClientAborted: true, AbortPhase: AbortPhaseAfterHeaders},
+		{ID: "retry", Seq: 3, RetryCount: &retry, HTTPStatus: 200},
+		{ID: "alias", Seq: 4, HTTPStatus: 0, Normalized: Normalized{ClientAborted: true}},
+	}}
+	committed := trace.Query().Committed().Calls()
+	if len(committed) != 2 || committed[0].ID != "ok" || committed[1].ID != "retry" {
+		t.Fatalf("committed=%v", ids(committed))
+	}
+	aborted := trace.Query().Aborted().Calls()
+	if len(aborted) != 2 || aborted[0].ID != "barge" || aborted[1].ID != "alias" {
+		t.Fatalf("aborted=%v", ids(aborted))
+	}
+	if trace.Query().Status(200).Committed().Len() != 2 {
+		t.Fatal("Status(200) still includes after-headers abort; Committed must drop it")
+	}
+	tb := &fakeTB{}
+	if !trace.Query().Committed().Check(tb).CallCount(2) {
+		t.Fatal("Committed().CallCount(2) should pass")
+	}
+	if !trace.Query().Check(tb).CallCount(2, ExcludeAborted()) {
+		t.Fatal("CallCount(2, ExcludeAborted) should pass")
+	}
+}
+
 func TestOffersToolAndWithoutTools(t *testing.T) {
 	t.Parallel()
 	trace := goldenMultiCallTrace()

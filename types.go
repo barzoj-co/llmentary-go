@@ -221,9 +221,11 @@ type SpecViolation struct {
 }
 
 // IgnoredField is one normalized.ignored_fields entry (for example vendor
-// keywords such as enumDescriptions).
+// keywords such as enumDescriptions). Proxy v0.5.0 writes context
+// (request|response), not side. FilterSide prefers context, then side.
 type IgnoredField struct {
 	Side     string `json:"side,omitempty"`
+	Context  string `json:"context,omitempty"`
 	Kind     string `json:"kind,omitempty"`
 	Path     string `json:"path,omitempty"`
 	Pointer  string `json:"pointer,omitempty"`
@@ -232,14 +234,66 @@ type IgnoredField struct {
 	Message  string `json:"message,omitempty"`
 }
 
+// FilterSide is the request/response label used by Side("…") filters.
+// It prefers context (what the proxy emits) and falls back to side.
+func (f IgnoredField) FilterSide() string {
+	if c := strings.TrimSpace(f.Context); c != "" {
+		return c
+	}
+	return strings.TrimSpace(f.Side)
+}
+
+// SessionSpecCounts is GET /sessions[].spec (DOG-51).
+type SessionSpecCounts struct {
+	Checked     int `json:"checked"`
+	Clean       int `json:"clean"`
+	Findings    int `json:"findings"`
+	RequestOnly int `json:"request_only"`
+	NotChecked  int `json:"not_checked"`
+}
+
+func (s *SessionSpecCounts) UnmarshalJSON(data []byte) error {
+	var raw struct {
+		Checked      *int `json:"checked"`
+		Clean        *int `json:"clean"`
+		Findings     *int `json:"findings"`
+		RequestOnly  *int `json:"request_only"`
+		NotChecked   *int `json:"not_checked"`
+		CheckedA     *int `json:"Checked"`
+		CleanA       *int `json:"Clean"`
+		FindingsA    *int `json:"Findings"`
+		RequestOnlyA *int `json:"RequestOnly"`
+		NotCheckedA  *int `json:"NotChecked"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	s.Checked = firstPresentInt(raw.Checked, raw.CheckedA)
+	s.Clean = firstPresentInt(raw.Clean, raw.CleanA)
+	s.Findings = firstPresentInt(raw.Findings, raw.FindingsA)
+	s.RequestOnly = firstPresentInt(raw.RequestOnly, raw.RequestOnlyA)
+	s.NotChecked = firstPresentInt(raw.NotChecked, raw.NotCheckedA)
+	return nil
+}
+
+func firstPresentInt(values ...*int) int {
+	for _, v := range values {
+		if v != nil {
+			return *v
+		}
+	}
+	return 0
+}
+
 // SessionInfo is one row from GET /sessions (no call bodies).
 type SessionInfo struct {
-	ID             string     `json:"id"`
-	Calls          int        `json:"calls"`
-	Active         int        `json:"active"`
-	Sources        []string   `json:"sources,omitempty"`
-	FirstStartedAt *time.Time `json:"first_started_at,omitempty"`
-	LastEndedAt    *time.Time `json:"last_ended_at,omitempty"`
+	ID             string             `json:"id"`
+	Calls          int                `json:"calls"`
+	Active         int                `json:"active"`
+	Sources        []string           `json:"sources,omitempty"`
+	FirstStartedAt *time.Time         `json:"first_started_at,omitempty"`
+	LastEndedAt    *time.Time         `json:"last_ended_at,omitempty"`
+	Spec           *SessionSpecCounts `json:"spec,omitempty"`
 }
 
 // ProxyConfig is the GET /config payload. Version, upstreams, spec

@@ -504,6 +504,17 @@ func (q Query) Retries() Query {
 	return q.keep("retries", func(c Call) bool { return c.RetryCount != nil && *c.RetryCount > 0 })
 }
 
+// Aborted keeps client-aborted calls (DOG-50). After-headers aborts
+// still have HTTP 200, so Status(0) is not a substitute.
+func (q Query) Aborted() Query {
+	return q.keep("aborted", func(c Call) bool { return c.Aborted() })
+}
+
+// Committed keeps calls that were not client-aborted.
+func (q Query) Committed() Query {
+	return q.keep("committed", func(c Call) bool { return !c.Aborted() })
+}
+
 func (q Query) Index(i int) Query {
 	label := fmt.Sprintf("index(%d)", i)
 	if i < 0 || i >= len(q.calls) {
@@ -615,17 +626,7 @@ func (a *Assertions) failNoCalls(known []string) bool {
 
 func (a *Assertions) CallCount(want int, opts ...CallCountOption) bool {
 	a.t.Helper()
-	var options CallCountOptions
-	for _, opt := range opts {
-		opt(&options)
-	}
-	got := 0
-	for _, call := range a.trace.Calls {
-		if options.ExcludeRetries && call.RetryCount != nil && *call.RetryCount > 0 {
-			continue
-		}
-		got++
-	}
+	got := countCalls(a.trace.Calls, applyCallCountOptions(opts))
 	if got != want {
 		return a.fail("LLM call count mismatch: got %d, want %d", got, want)
 	}

@@ -60,7 +60,9 @@ trace := lm.Wait(ctx, llmentary.MinCalls(2))
 assert := lm.Expect(ctx, llmentary.MinCalls(2))
 ```
 
-`ListSessions` is `GET /sessions`. A 404 from `GET /sessions/{id}` is
+`ListSessions` is `GET /sessions`. Each row's `Spec` is the session
+`checked` / `clean` / `findings` / `request_only` / `not_checked` summary
+(absent on older proxies). A 404 from `GET /sessions/{id}` is
 `*llmentary.SessionNotFoundError` (`llmentary.IsSessionNotFound`). Expect/Check
 on a session that never recorded a call fail with
 `no calls recorded for session <id>` and, when the client listed other
@@ -156,6 +158,7 @@ Other filters:
 
 - `Errors()`
 - `Retries()`
+- `Aborted()` / `Committed()` (client-aborted vs the rest; after-headers abort is still HTTP 200)
 - `Index(i)`
 - `OffersTool(name)` / `WithoutTools()`
 - `Since(mark)` after `m := lm.Mark(ctx)`
@@ -298,6 +301,8 @@ assert.TokensAtMost(1000)
 assert.LatencyBelow(2 * time.Second)
 assert.TTFTBelow(500 * time.Millisecond)
 assert.CallCount(1, llmentary.ExcludeRetries())
+assert.CallCount(2, llmentary.ExcludeAborted())
+assert.CallCount(1, llmentary.ExcludeAborted(), llmentary.ExcludeRetries())
 assert.Retries(0)
 assert.NoRetries()
 assert.NoErrors()
@@ -323,7 +328,7 @@ not checked — 401s and client aborts), `N violations`, `not checked`,
 |---|---|
 | `validation` | Metadata: mode, profile, target (`openai` / `openai-compatible`), spec SHA, request/response checked, skipped reason |
 | `spec_violations` | Findings. `[]` = clean. Absent = not checked |
-| `ignored_fields` | Vendor keys the proxy ignored (for example `enumDescriptions`) |
+| `ignored_fields` | Vendor keys the proxy ignored (for example `enumDescriptions`). Entries use `context` (`request`/`response`); `Side("request")` reads `context`, then `side`. Missing both is fail-closed. |
 
 ```go
 val := call.Validation()
@@ -333,6 +338,7 @@ _ = trace.SpecViolations()
 
 assert.NoSpecViolations() // documented as AssertNoSpecViolations
 assert.NoIgnoredFields()  // documented as AssertNoIgnoredFields
+assert.NoIgnoredFields(llmentary.Side("request")) // uses context, then side
 assert.NoSpecViolations(
     llmentary.Side("request"),
     llmentary.Calls(1),
