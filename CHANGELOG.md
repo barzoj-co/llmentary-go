@@ -1,10 +1,11 @@
 # Changelog
 
-## [Unreleased]
+## [0.5.0](https://github.com/barzoj-co/llmentary-go/compare/v0.4.4...v0.5.0) (2026-10-22)
+
 
 ### Features
 
-* pin proxy v0.5.0 and expose spec targets and upstream timeouts
+* pin proxy v0.5.0 and expose spec targets and timeouts ([#40](https://github.com/barzoj-co/llmentary-go/issues/40)) ([9f2063f](https://github.com/barzoj-co/llmentary-go/commit/9f2063fd35ee8d74a65983845fbab2caba770a90))
 
 ## [0.4.4](https://github.com/barzoj-co/llmentary-go/compare/v0.4.3...v0.4.4) (2026-10-22)
 
