@@ -79,6 +79,23 @@ func TestPackageCallCountAndTokens(t *testing.T) {
 		t.Fatalf("CallCount should fail: %+v", tb)
 	}
 
+	retry = 1
+	mixed := []Call{
+		{ID: "ok", Seq: 1},
+		{ID: "abort", Seq: 2, ClientAborted: true, HTTPStatus: 200, AbortPhase: AbortPhaseAfterHeaders},
+		{ID: "retry-abort", Seq: 3, ClientAborted: true, RetryCount: &retry},
+		{ID: "retry-ok", Seq: 4, RetryCount: &retry},
+	}
+	AssertCallCount(t, mixed, 4)
+	CallCount(t, mixed, 2, ExcludeAborted())
+	CallCount(t, mixed, 2, ExcludeRetries())
+	CallCount(t, mixed, 1, ExcludeAborted(), ExcludeRetries())
+	tb = &fakeTB{}
+	AssertCallCount(tb, mixed, 3, ExcludeAborted())
+	if !tb.fatal {
+		t.Fatal("ExcludeAborted count 3 should fail on 2 committed")
+	}
+
 	tb = &fakeTB{}
 	AssertTokensBelow(tb, calls, 10)
 	if !tb.fatal || !strings.Contains(strings.Join(tb.messages, "\n"), "token total too high") {

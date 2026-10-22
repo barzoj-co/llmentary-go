@@ -167,6 +167,124 @@ func TestNoIgnoredFieldsContract(t *testing.T) {
 	}
 }
 
+func TestNoIgnoredFieldsSideUsesContext(t *testing.T) {
+	contextOnly := Trace{SessionID: "s", Calls: []Call{loadSpecCall(t, "ignored-fields-context.json")}}
+	if fields, ok := contextOnly.Calls[0].IgnoredFields(); !ok || len(fields) != 1 || fields[0].FilterSide() != "request" {
+		t.Fatalf("context-only FilterSide=%#v", contextOnly.Calls[0].Normalized.IgnoredFields)
+	}
+
+	tb := &fakeTB{}
+	(&Assertions{t: tb, trace: contextOnly}).NoIgnoredFields(Side("request"))
+	joined := strings.Join(tb.messages, "\n")
+	if !tb.failed || !strings.Contains(joined, "request") || !strings.Contains(joined, "vendor_field") || !strings.Contains(joined, "provider") {
+		t.Fatalf("context-only request filter must fail: %q", tb.messages)
+	}
+
+	if !(&Assertions{t: t, trace: contextOnly, fatal: true}).NoIgnoredFields(Side("response")) {
+		t.Fatal("request-context entry must not match Side(response)")
+	}
+
+	sideOnly := ignoredFieldTrace(`{"side":"request","kind":"vendor_field","path":"/foo","message":"side only"}`)
+	tb = &fakeTB{}
+	(&Assertions{t: tb, trace: sideOnly}).NoIgnoredFields(Side("request"))
+	if !strings.Contains(strings.Join(tb.messages, "\n"), "request") {
+		t.Fatalf("side-only request filter must fail: %q", tb.messages)
+	}
+
+	both := ignoredFieldTrace(`{"side":"response","context":"request","kind":"vendor_field","path":"/bar","message":"prefer context"}`)
+	tb = &fakeTB{}
+	(&Assertions{t: tb, trace: both}).NoIgnoredFields(Side("request"))
+	if !strings.Contains(strings.Join(tb.messages, "\n"), "request") {
+		t.Fatalf("context must win over side: %q", tb.messages)
+	}
+	if !(&Assertions{t: t, trace: both, fatal: true}).NoIgnoredFields(Side("response")) {
+		t.Fatal("context=request must not match Side(response) even if side=response")
+	}
+
+	neither := ignoredFieldTrace(`{"kind":"vendor_field","path":"/bare","message":"no side"}`)
+	tb = &fakeTB{}
+	(&Assertions{t: tb, trace: neither}).NoIgnoredFields(Side("request"))
+	if !strings.Contains(strings.Join(tb.messages, "\n"), "bare") {
+		t.Fatalf("missing side/context must fail-closed: %q", tb.messages)
+	}
+	tb = &fakeTB{}
+	(&Assertions{t: tb, trace: neither}).NoIgnoredFields(Side("response"))
+	if !strings.Contains(strings.Join(tb.messages, "\n"), "bare") {
+		t.Fatalf("missing side/context must match any Side filter: %q", tb.messages)
+	}
+}
+
+func TestNoSpecViolationsMissingSideFailClosed(t *testing.T) {
+	trace := Trace{SessionID: "s", Calls: []Call{{
+		Seq: 1, APIFamily: "openai.chat",
+		Normalized: Normalized{
+			Validation:     &Validation{RequestChecked: true, ResponseChecked: true},
+			SpecViolations: &[]SpecViolation{{Path: "/unk", Keyword: "unknown_request_field", Message: "no side"}},
+		},
+	}}}
+	tb := &fakeTB{}
+	(&Assertions{t: tb, trace: trace}).NoSpecViolations(Side("request"))
+	if !strings.Contains(strings.Join(tb.messages, "\n"), "unk") {
+		t.Fatalf("missing spec_violations.side must fail-closed: %q", tb.messages)
+	}
+	tb = &fakeTB{}
+	(&Assertions{t: tb, trace: trace}).NoSpecViolations(Side("response"))
+	if !strings.Contains(strings.Join(tb.messages, "\n"), "unk") {
+		t.Fatalf("missing spec_violations.side must match any Side filter: %q", tb.messages)
+	}
+}
+
+func TestSessionSpecCountsAliasesAndAbsent(t *testing.T) {
+	var snake SessionSpecCounts
+	if err := json.Unmarshal([]byte(`{"checked":3,"clean":1,"findings":2,"request_only":1,"not_checked":4}`), &snake); err != nil {
+		t.Fatal(err)
+	}
+	if snake.Checked != 3 || snake.Clean != 1 || snake.Findings != 2 || snake.RequestOnly != 1 || snake.NotChecked != 4 {
+		t.Fatalf("snake=%+v", snake)
+	}
+	var pascal SessionSpecCounts
+	if err := json.Unmarshal([]byte(`{"Checked":3,"Clean":1,"Findings":2,"RequestOnly":1,"NotChecked":4}`), &pascal); err != nil {
+		t.Fatal(err)
+	}
+	if pascal != snake {
+		t.Fatalf("pascal=%+v snake=%+v", pascal, snake)
+	}
+	var preferSnake SessionSpecCounts
+	if err := json.Unmarshal([]byte(`{"checked":9,"Checked":1,"clean":8,"Clean":0}`), &preferSnake); err != nil {
+		t.Fatal(err)
+	}
+	if preferSnake.Checked != 9 || preferSnake.Clean != 8 {
+		t.Fatalf("prefer snake=%+v", preferSnake)
+	}
+	var info SessionInfo
+	if err := json.Unmarshal([]byte(`{"id":"s","calls":1,"active":0}`), &info); err != nil {
+		t.Fatal(err)
+	}
+	if info.Spec != nil {
+		t.Fatalf("absent spec=%+v", info.Spec)
+	}
+	if err := json.Unmarshal([]byte(`{"id":"s","calls":1,"active":0,"spec":{"checked":0,"clean":0,"findings":0,"request_only":0,"not_checked":1}}`), &info); err != nil {
+		t.Fatal(err)
+	}
+	if info.Spec == nil || info.Spec.NotChecked != 1 || info.Spec.Checked != 0 {
+		t.Fatalf("zero spec=%+v", info.Spec)
+	}
+}
+
+func ignoredFieldTrace(entry string) Trace {
+	var field IgnoredField
+	if err := json.Unmarshal([]byte(entry), &field); err != nil {
+		panic(err)
+	}
+	return Trace{SessionID: "s", Calls: []Call{{
+		Seq: 1, APIFamily: "openai.chat",
+		Normalized: Normalized{
+			Validation:    &Validation{RequestChecked: true, ResponseChecked: true},
+			IgnoredFields: &[]IgnoredField{field},
+		},
+	}}}
+}
+
 func TestTraceSpecViolationsAndSummary(t *testing.T) {
 	trace := Trace{SessionID: "s", Calls: []Call{
 		loadSpecCall(t, "chat-service-run1-clean.json"),

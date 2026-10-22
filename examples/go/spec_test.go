@@ -91,6 +91,16 @@ func TestCompatibleTargetRecordsVendorField(t *testing.T) {
 	if !ok || len(ignored) == 0 {
 		t.Fatal("expected ignored_fields for vendor extra foo")
 	}
+	sideTB := &recordTB{}
+	trace.Query().Check(sideTB).NoIgnoredFields(llmentary.Side("request"))
+	sideTB.flush()
+	if !sideTB.failed {
+		t.Fatal("NoIgnoredFields(Side(request)) must fail on request vendor_field (DOG-45)")
+	}
+	joinedSide := strings.Join(sideTB.messages, "\n")
+	if !strings.Contains(joinedSide, "request") || !strings.Contains(joinedSide, "foo") {
+		t.Fatalf("request-side ignored-field message=%q", joinedSide)
+	}
 	found := false
 	for _, field := range ignored {
 		if field.Kind == "vendor_field" && (strings.Contains(field.Path, "foo") || strings.Contains(field.Pointer, "foo") || strings.Contains(field.Message, "foo")) {

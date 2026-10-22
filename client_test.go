@@ -81,7 +81,10 @@ func TestListSessionsAndConfig(t *testing.T) {
 		case "/sessions":
 			gotSource = r.URL.Query().Get("source")
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"sessions": []SessionInfo{{ID: "default", Calls: 2, Active: 0, Sources: []string{"default"}}},
+				"sessions": []SessionInfo{{
+					ID: "default", Calls: 2, Active: 0, Sources: []string{"default"},
+					Spec: &SessionSpecCounts{Checked: 2, Clean: 1, Findings: 1, RequestOnly: 0, NotChecked: 0},
+				}},
 			})
 		case "/config":
 			_ = json.NewEncoder(w).Encode(map[string]any{
@@ -107,6 +110,9 @@ func TestListSessionsAndConfig(t *testing.T) {
 	}
 	if gotSource != "header" || len(list) != 1 || list[0].ID != "default" || list[0].Calls != 2 {
 		t.Fatalf("source=%q list=%+v", gotSource, list)
+	}
+	if list[0].Spec == nil || list[0].Spec.Checked != 2 || list[0].Spec.Clean != 1 || list[0].Spec.Findings != 1 {
+		t.Fatalf("list spec=%+v", list[0].Spec)
 	}
 	cfg, err := c.Config(context.Background())
 	if err != nil {

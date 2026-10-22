@@ -87,6 +87,12 @@ func TestListSessionsMinCallsAndNotFound(t *testing.T) {
 			if item.Calls != 2 {
 				t.Fatalf("list row for %s has calls=%d", item.ID, item.Calls)
 			}
+			if item.Spec == nil {
+				t.Fatal("GET /sessions row is missing spec (need proxy v0.4.0+)")
+			}
+			if item.Spec.Checked+item.Spec.RequestOnly+item.Spec.NotChecked != item.Calls {
+				t.Fatalf("spec counters=%+v calls=%d", item.Spec, item.Calls)
+			}
 		}
 	}
 	if !found {

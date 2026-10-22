@@ -399,6 +399,7 @@ func ToolOrder(t testing.TB, calls []Call, names ...string) {
 
 type CallCountOptions struct {
 	ExcludeRetries bool
+	ExcludeAborted bool
 }
 
 type CallCountOption func(*CallCountOptions)
@@ -409,19 +410,40 @@ func ExcludeRetries() CallCountOption {
 	}
 }
 
-func AssertCallCount(t testing.TB, calls []Call, want int, opts ...CallCountOption) {
-	t.Helper()
+// ExcludeAborted skips client-aborted calls when counting (DOG-50).
+func ExcludeAborted() CallCountOption {
+	return func(o *CallCountOptions) {
+		o.ExcludeAborted = true
+	}
+}
+
+func applyCallCountOptions(opts []CallCountOption) CallCountOptions {
 	var options CallCountOptions
 	for _, opt := range opts {
-		opt(&options)
+		if opt != nil {
+			opt(&options)
+		}
 	}
+	return options
+}
+
+func countCalls(calls []Call, options CallCountOptions) int {
 	got := 0
 	for _, call := range calls {
 		if options.ExcludeRetries && call.RetryCount != nil && *call.RetryCount > 0 {
 			continue
 		}
+		if options.ExcludeAborted && call.Aborted() {
+			continue
+		}
 		got++
 	}
+	return got
+}
+
+func AssertCallCount(t testing.TB, calls []Call, want int, opts ...CallCountOption) {
+	t.Helper()
+	got := countCalls(calls, applyCallCountOptions(opts))
 	if got != want {
 		t.Fatalf("call count mismatch: got=%d want=%d", got, want)
 	}
