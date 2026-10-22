@@ -10,8 +10,39 @@ PATTERN='healsens|livekit|chatservice'
 
 scan() {
   local root="$1"
-  grep -RInE -i --exclude-dir=.git --exclude="$SELF" --exclude='*.swp' \
-    "${PATTERN}" "${root}" || true
+  local rc=0 hits=""
+
+  if [[ ! -d "${root}" ]]; then
+    echo "private-name scan: not a directory: ${root}" >&2
+    return 2
+  fi
+
+  hits="$(grep -RInE -i --exclude-dir=.git --exclude="${SELF}" --exclude='*.swp' \
+    "${PATTERN}" "${root}" 2>&1)" && rc=0 || rc=$?
+  if [[ "${rc}" -gt 1 ]]; then
+    printf '%s\n' "${hits}" >&2
+    echo "private-name content scan failed (grep exit ${rc})" >&2
+    return 2
+  fi
+  if [[ "${rc}" -eq 0 && -n "${hits}" ]]; then
+    printf '%s\n' "${hits}"
+  fi
+
+  hits="$(
+    (
+      cd "${root}"
+      find . -type d -name .git -prune -o \
+        ! -name "${SELF}" ! -name '*.swp' -print
+    ) | grep -iE "${PATTERN}"
+  )" && rc=0 || rc=$?
+  if [[ "${rc}" -gt 1 ]]; then
+    echo "private-name path scan failed (grep exit ${rc})" >&2
+    return 2
+  fi
+  if [[ "${rc}" -eq 0 && -n "${hits}" ]]; then
+    printf '%s\n' "${hits}"
+  fi
+  return 0
 }
 
 self_test() {
@@ -19,12 +50,13 @@ self_test() {
   tmp="$(mktemp -d)"
   trap 'rm -rf "'"${tmp}"'"' EXIT
 
-  mkdir -p "${tmp}/ok" "${tmp}/bad"
+  mkdir -p "${tmp}/ok" "${tmp}/bad" "${tmp}/badpath"
   printf '%s\n' 'session_id: chat-service-run1' 'name: voice-agent' 'peer: service-a' \
     >"${tmp}/ok/generic.txt"
   printf '%s\n' 'session_id: chatservice-run1' >"${tmp}/bad/legacy.txt"
   printf '%s\n' 'livekit-demo' >"${tmp}/bad/voice.txt"
   printf '%s\n' 'HealSens' >"${tmp}/bad/health.txt"
+  printf '%s\n' 'ok' >"${tmp}/badpath/chatservice-run1.json"
 
   hits="$(scan "${tmp}/ok")"
   if [[ -n "${hits}" ]]; then
@@ -44,6 +76,18 @@ self_test() {
       failed=1
     fi
   done
+
+  hits="$(scan "${tmp}/badpath")"
+  if ! grep -Fq 'chatservice-run1.json' <<<"${hits}"; then
+    echo "self-test: expected path-name hit for chatservice-run1.json" >&2
+    echo "${hits}" >&2
+    failed=1
+  fi
+
+  if hits="$(scan "${tmp}/missing" 2>/dev/null)"; then
+    echo "self-test: missing directory must fail the scan" >&2
+    failed=1
+  fi
 
   if [[ "${failed}" -ne 0 ]]; then
     echo "self-test failed" >&2
@@ -67,7 +111,9 @@ if [[ $# -ne 0 ]]; then
   exit 2
 fi
 
-hits="$(scan "${ROOT}")"
+if ! hits="$(scan "${ROOT}")"; then
+  exit 1
+fi
 if [[ -n "${hits}" ]]; then
   echo "private project names must be genericized (chat-service, voice-agent, service-a):" >&2
   echo "${hits}" >&2
