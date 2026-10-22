@@ -3,14 +3,17 @@
 package llmentary
 
 import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -657,15 +660,26 @@ type isolationVectorHTTPError struct {
 }
 
 func (e isolationVectorHTTPError) Error() string {
-	return fmt.Sprintf("GET %s: status=%d (ref %s)", e.URL, e.Status, e.Ref)
+	switch e.Status {
+	case http.StatusForbidden, http.StatusTooManyRequests:
+		return fmt.Sprintf("GET %s: status=%d (ref %s): GitHub rate-limited or denied this public archive fetch; set GITHUB_TOKEN if you hit anonymous limits", e.URL, e.Status, e.Ref)
+	case http.StatusNotFound:
+		return fmt.Sprintf("GET %s: status=%d (ref %s): tag or ref not found", e.URL, e.Status, e.Ref)
+	default:
+		return fmt.Sprintf("GET %s: status=%d (ref %s)", e.URL, e.Status, e.Ref)
+	}
+}
+
+func isolationVectorDeniedStatus(status int) bool {
+	return status == http.StatusNotFound || status == http.StatusForbidden || status == http.StatusTooManyRequests
 }
 
 func isolationVectorDeniedDisposition(err error, liveDownload bool) (action, msg string, handled bool) {
 	var httpErr isolationVectorHTTPError
-	if !errors.As(err, &httpErr) || (httpErr.Status != http.StatusNotFound && httpErr.Status != http.StatusForbidden) {
+	if !errors.As(err, &httpErr) || !isolationVectorDeniedStatus(httpErr.Status) {
 		return "", "", false
 	}
-	msg = fmt.Sprintf("proxy testdata/isolation: HTTP %d at ref %s — cannot compare vendored copy", httpErr.Status, httpErr.Ref)
+	msg = httpErr.Error()
 	if liveDownload {
 		return "fail", msg, true
 	}
@@ -704,51 +718,86 @@ func httpStatusFromError(err error) (int, bool) {
 	return n, true
 }
 
+const defaultGitHubCodeloadRoot = "https://codeload.github.com"
+
+func isolationArchiveURL(archiveRoot, repo, ref string) string {
+	return strings.TrimRight(archiveRoot, "/") + "/" + repo + "/tar.gz/" + strings.TrimPrefix(ref, "/")
+}
+
 func fetchProxyIsolationVectors(ctx context.Context) (map[string][]byte, error) {
 	token := optionalGitHubToken()
 	ref := isolationVectorRef()
-	return fetchGitHubIsolationDir(ctx, strings.TrimRight(defaultGitHubAPIRoot, "/"), ref, token)
+	return fetchGitHubIsolationDir(ctx, defaultGitHubCodeloadRoot, ref, token)
 }
 
-func fetchGitHubIsolationDir(ctx context.Context, apiRoot, ref, token string) (map[string][]byte, error) {
-	listURL := strings.TrimRight(apiRoot, "/") + "/repos/" + defaultReleaseRepo + "/contents/testdata/isolation?ref=" + url.QueryEscape(ref)
-	body, err := httpGetBytesAccept(ctx, http.DefaultClient, listURL, token, 1<<20, "application/vnd.github+json")
+func fetchGitHubIsolationDir(ctx context.Context, archiveRoot, ref, token string) (map[string][]byte, error) {
+	archiveURL := isolationArchiveURL(archiveRoot, defaultReleaseRepo, ref)
+	body, err := httpGetBytesAccept(ctx, http.DefaultClient, archiveURL, token, maxArchiveBytes, "")
 	if err != nil {
-		if status, ok := httpStatusFromError(err); ok && (status == http.StatusNotFound || status == http.StatusForbidden) {
-			return nil, isolationVectorHTTPError{Status: status, Ref: ref, URL: listURL}
+		if status, ok := httpStatusFromError(err); ok && isolationVectorDeniedStatus(status) {
+			return nil, isolationVectorHTTPError{Status: status, Ref: ref, URL: archiveURL}
 		}
 		return nil, err
 	}
-	var entries []struct {
-		Name        string `json:"name"`
-		Type        string `json:"type"`
-		DownloadURL string `json:"download_url"`
-	}
-	if err := json.Unmarshal(body, &entries); err != nil {
-		return nil, fmt.Errorf("parse isolation dir at %s: %w", ref, err)
-	}
-	out := map[string][]byte{}
-	for _, entry := range entries {
-		if entry.Type != "file" || strings.HasPrefix(entry.Name, ".") {
-			continue
-		}
-		if !strings.HasSuffix(entry.Name, ".json") && !strings.EqualFold(entry.Name, "README.md") {
-			continue
-		}
-		if entry.DownloadURL == "" {
-			return nil, fmt.Errorf("isolation file %s at %s has no download_url", entry.Name, ref)
-		}
-		data, err := httpGetBytesAccept(ctx, http.DefaultClient, entry.DownloadURL, token, 1<<20, "application/vnd.github.raw")
-		if err != nil {
-			if status, ok := httpStatusFromError(err); ok && (status == http.StatusNotFound || status == http.StatusForbidden) {
-				return nil, isolationVectorHTTPError{Status: status, Ref: ref, URL: entry.DownloadURL}
-			}
-			return nil, fmt.Errorf("download %s: %w", entry.Name, err)
-		}
-		out[path.Base(entry.Name)] = data
+	out, err := isolationFilesFromTarGz(body)
+	if err != nil {
+		return nil, err
 	}
 	if len(out) == 0 {
 		return nil, fmt.Errorf("proxy testdata/isolation is empty at ref %s", ref)
+	}
+	return out, nil
+}
+
+func isolationTarRel(name string) (string, bool) {
+	name = strings.ReplaceAll(name, "\\", "/")
+	name = strings.TrimPrefix(name, "./")
+	const marker = "testdata/isolation/"
+	i := strings.Index(name, marker)
+	if i < 0 {
+		return "", false
+	}
+	rel := name[i+len(marker):]
+	if rel == "" || strings.Contains(rel, "/") {
+		return "", false
+	}
+	return rel, true
+}
+
+func isolationFilesFromTarGz(raw []byte) (map[string][]byte, error) {
+	gz, err := gzip.NewReader(bytes.NewReader(raw))
+	if err != nil {
+		return nil, fmt.Errorf("isolation archive: %w", err)
+	}
+	defer func() { _ = gz.Close() }()
+	tr := tar.NewReader(gz)
+	out := map[string][]byte{}
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("isolation archive: %w", err)
+		}
+		if !hdr.FileInfo().Mode().IsRegular() {
+			continue
+		}
+		rel, ok := isolationTarRel(hdr.Name)
+		if !ok || strings.HasPrefix(rel, ".") {
+			continue
+		}
+		if !strings.HasSuffix(rel, ".json") && !strings.EqualFold(rel, "README.md") {
+			continue
+		}
+		data, err := io.ReadAll(io.LimitReader(tr, 1<<20+1))
+		if err != nil {
+			return nil, fmt.Errorf("isolation archive %s: %w", rel, err)
+		}
+		if len(data) > 1<<20 {
+			return nil, fmt.Errorf("isolation archive %s: file exceeds 1MiB", rel)
+		}
+		out[path.Base(rel)] = data
 	}
 	return out, nil
 }
@@ -800,6 +849,20 @@ func bytesEqualJSON(a, b []byte) bool {
 	return string(a) == string(b)
 }
 
+func TestIsolationArchiveURLUsesPublicCodeload(t *testing.T) {
+	if defaultGitHubCodeloadRoot != "https://codeload.github.com" {
+		t.Fatalf("codeload root=%q", defaultGitHubCodeloadRoot)
+	}
+	got := isolationArchiveURL(defaultGitHubCodeloadRoot, defaultReleaseRepo, ProxyVersion)
+	want := "https://codeload.github.com/" + defaultReleaseRepo + "/tar.gz/" + ProxyVersion
+	if got != want {
+		t.Fatalf("archive URL=%q want %q", got, want)
+	}
+	if strings.Contains(got, "api.github.com") || strings.Contains(got, "/contents/") {
+		t.Fatalf("must not use the GitHub REST API: %s", got)
+	}
+}
+
 func TestIsolationVectorRefDefaultsToPinnedRelease(t *testing.T) {
 	t.Setenv("LLMENTARY_ISOLATION_VECTORS_REF", "")
 	if got := isolationVectorRef(); got != ProxyVersion {
@@ -814,36 +877,21 @@ func TestIsolationVectorRefDefaultsToPinnedRelease(t *testing.T) {
 	}
 }
 
-func TestFetchGitHubIsolationDirQueriesPinnedRef(t *testing.T) {
-	t.Setenv("LLMENTARY_ISOLATION_VECTORS_REF", "")
-	var gotRef string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotRef = r.URL.Query().Get("ref")
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`[]`))
-	}))
-	t.Cleanup(srv.Close)
-	_, err := fetchGitHubIsolationDir(context.Background(), srv.URL, isolationVectorRef(), "")
-	if err == nil || !strings.Contains(err.Error(), ProxyVersion) {
-		t.Fatalf("empty pin listing err=%v", err)
-	}
-	if gotRef != ProxyVersion {
-		t.Fatalf("contents query ref=%q want pinned %q", gotRef, ProxyVersion)
-	}
-	if gotRef == "main" {
-		t.Fatal("must not query proxy main for the default drift check")
-	}
-}
-
 func TestIsolationVectorFetchDeniedNeverPasses(t *testing.T) {
-	for _, status := range []int{http.StatusNotFound, http.StatusForbidden} {
+	for _, status := range []int{http.StatusNotFound, http.StatusForbidden, http.StatusTooManyRequests} {
 		err := isolationVectorHTTPError{Status: status, Ref: "main", URL: "https://example.test/isolation"}
 		action, msg, ok := isolationVectorDeniedDisposition(err, true)
-		if !ok || action != "fail" || !strings.Contains(msg, fmt.Sprintf("HTTP %d", status)) {
+		if !ok || action != "fail" || !strings.Contains(msg, fmt.Sprintf("status=%d", status)) {
 			t.Fatalf("live HTTP %d: action=%q msg=%q ok=%v", status, action, msg, ok)
 		}
+		if status != http.StatusNotFound && !strings.Contains(msg, "rate-limited") {
+			t.Fatalf("HTTP %d error should mention rate-limited: %s", status, msg)
+		}
+		if status == http.StatusNotFound && !strings.Contains(msg, "tag or ref not found") {
+			t.Fatalf("HTTP 404 error should name the missing tag: %s", msg)
+		}
 		action, msg, ok = isolationVectorDeniedDisposition(err, false)
-		if !ok || action != "skip" || !strings.Contains(msg, fmt.Sprintf("HTTP %d", status)) {
+		if !ok || action != "skip" || !strings.Contains(msg, fmt.Sprintf("status=%d", status)) {
 			t.Fatalf("offline HTTP %d: action=%q msg=%q ok=%v", status, action, msg, ok)
 		}
 	}
@@ -853,19 +901,76 @@ func TestIsolationVectorFetchDeniedNeverPasses(t *testing.T) {
 }
 
 func TestFetchGitHubIsolationDirDeniedIsError(t *testing.T) {
-	for _, status := range []int{http.StatusNotFound, http.StatusForbidden} {
+	for _, status := range []int{http.StatusNotFound, http.StatusForbidden, http.StatusTooManyRequests} {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(status)
 		}))
-		_, err := fetchGitHubIsolationDir(context.Background(), srv.URL, "main", "")
+		_, err := fetchGitHubIsolationDir(context.Background(), srv.URL, "missing-tag", "")
 		srv.Close()
 		var httpErr isolationVectorHTTPError
-		if !errors.As(err, &httpErr) || httpErr.Status != status || httpErr.Ref != "main" {
+		if !errors.As(err, &httpErr) || httpErr.Status != status || httpErr.Ref != "missing-tag" {
 			t.Fatalf("status %d: err=%v", status, err)
+		}
+		if !strings.Contains(err.Error(), "/tar.gz/missing-tag") {
+			t.Fatalf("status %d URL should be the public archive: %v", status, err)
 		}
 		if action, _, ok := isolationVectorDeniedDisposition(err, true); !ok || action != "fail" {
 			t.Fatalf("status %d must fail the live drift check, action=%q ok=%v", status, action, ok)
 		}
+	}
+}
+
+func TestFetchGitHubIsolationDirQueriesPinnedRef(t *testing.T) {
+	t.Setenv("LLMENTARY_ISOLATION_VECTORS_REF", "")
+	empty := isolationTestTarGz(t, nil)
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		if strings.Contains(r.URL.RawQuery, "ref=") || strings.Contains(r.URL.Path, "/contents/") {
+			http.Error(w, "contents API is not allowed", http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/gzip")
+		_, _ = w.Write(empty)
+	}))
+	t.Cleanup(srv.Close)
+	_, err := fetchGitHubIsolationDir(context.Background(), srv.URL, isolationVectorRef(), "")
+	if err == nil || !strings.Contains(err.Error(), ProxyVersion) {
+		t.Fatalf("empty pin listing err=%v", err)
+	}
+	wantPath := "/" + defaultReleaseRepo + "/tar.gz/" + ProxyVersion
+	if gotPath != wantPath {
+		t.Fatalf("archive path=%q want %q", gotPath, wantPath)
+	}
+	if strings.Contains(gotPath, "main") {
+		t.Fatal("must not query proxy main for the default drift check")
+	}
+}
+
+func TestFetchGitHubIsolationDirExtractsFiles(t *testing.T) {
+	payload := []byte(`{"id":"vec","name":"from-archive"}`)
+	archive := isolationTestTarGz(t, map[string][]byte{
+		"README.md":        []byte("# isolation"),
+		"vector.json":      payload,
+		"nested/skip.json": []byte(`{}`),
+		"notes.txt":        []byte("ignore"),
+	})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write(archive)
+	}))
+	t.Cleanup(srv.Close)
+	got, err := fetchGitHubIsolationDir(context.Background(), srv.URL, ProxyVersion, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got["vector.json"]) != string(payload) || string(got["README.md"]) != "# isolation" {
+		t.Fatalf("extracted %#v", got)
+	}
+	if _, ok := got["skip.json"]; ok {
+		t.Fatal("nested isolation files must be ignored")
+	}
+	if _, ok := got["notes.txt"]; ok {
+		t.Fatal("non-json extras must be ignored")
 	}
 }
 
@@ -876,11 +981,12 @@ func TestFetchProxyIsolationVectorsUsesOptionalTokenOnly(t *testing.T) {
 		t.Fatalf("stale PAT must not feed isolation fetch: %q", got)
 	}
 
-	var sawAuth string
+	empty := isolationTestTarGz(t, nil)
+	var sawAuth, sawPath string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		sawAuth = r.Header.Get("Authorization")
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`[]`))
+		sawPath = r.URL.Path
+		_, _ = w.Write(empty)
 	}))
 	t.Cleanup(srv.Close)
 	_, err := fetchGitHubIsolationDir(context.Background(), srv.URL, ProxyVersion, optionalGitHubToken())
@@ -889,6 +995,9 @@ func TestFetchProxyIsolationVectorsUsesOptionalTokenOnly(t *testing.T) {
 	}
 	if sawAuth != "" {
 		t.Fatalf("anonymous isolation fetch sent Authorization=%q", sawAuth)
+	}
+	if !strings.Contains(sawPath, "/tar.gz/"+ProxyVersion) {
+		t.Fatalf("anonymous fetch path=%q", sawPath)
 	}
 
 	t.Setenv("GITHUB_TOKEN", "rate-limit-token")
@@ -900,4 +1009,31 @@ func TestFetchProxyIsolationVectorsUsesOptionalTokenOnly(t *testing.T) {
 	if sawAuth != "Bearer rate-limit-token" {
 		t.Fatalf("optional token Authorization=%q", sawAuth)
 	}
+}
+
+func isolationTestTarGz(t *testing.T, files map[string][]byte) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gz)
+	prefix := "llmentary-0.4.1/testdata/isolation/"
+	if err := tw.WriteHeader(&tar.Header{Name: prefix, Typeflag: tar.TypeDir, Mode: 0o755}); err != nil {
+		t.Fatal(err)
+	}
+	for name, body := range files {
+		hdr := &tar.Header{Name: prefix + name, Typeflag: tar.TypeReg, Mode: 0o644, Size: int64(len(body))}
+		if err := tw.WriteHeader(hdr); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tw.Write(body); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := gz.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
 }

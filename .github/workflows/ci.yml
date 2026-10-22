@@ -103,6 +103,7 @@ jobs:
         env:
           LLMENTARY_LIVE_DOWNLOAD: "1"
           LLMENTARY_LIVE_DOWNLOAD_DIR: ${{ github.workspace }}/bin
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           mkdir -p "$GITHUB_WORKSPACE/bin"
           go test -run 'TestDownloadPinnedProxyRelease|TestIsolationVectorsMatchPinnedProxy' -count=1 -v
@@ -169,6 +170,7 @@ jobs:
         env:
           LLMENTARY_LIVE_DOWNLOAD: "1"
           LLMENTARY_LIVE_DOWNLOAD_DIR: ${{ github.workspace }}/bin
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           mkdir -p "$GITHUB_WORKSPACE/bin"
           go test -run 'TestDownloadPinnedProxyRelease|TestIsolationVectorsMatchPinnedProxy' -count=1 -v

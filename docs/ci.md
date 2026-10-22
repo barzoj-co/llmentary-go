@@ -13,9 +13,12 @@ Workflows live under `.github/workflows/`. The main pipeline is `ci.yml`:
   profile fails the required `test` check — same idea as `e2e-gate`.
 - `integration`: non-fork pull requests and pushes to `main`; downloads the
   pinned `ProxyVersion` GitHub Release of `barzoj-co/llmentary` (`v0.4.1`)
-  with `llmentary.DownloadRelease` (checksum-verified, anonymous public
+  with `llmentary.DownloadRelease` (checksum-verified, public
   download). The same step drift-checks `testdata/isolation` against
-  that `ProxyVersion` tag, not proxy `main`. Runs the mock-upstream example, uploads
+  the public `codeload.github.com` archive for that `ProxyVersion` tag, not
+  proxy `main` and not the rate-limited Contents API. `GITHUB_TOKEN` is
+  `${{ github.token }}` only on that install step, as an optional rate-limit
+  assist. Runs the mock-upstream example, uploads
   `coverage-integration.out` tokenless, and publishes the same file as a
   workflow artifact for the `test` job gate
 - `e2e`: same event filter as `integration`; uses the `openai-e2e` environment
@@ -37,8 +40,9 @@ executed test names are visible in the log. Secret values are never printed.
 No secret is set at workflow or job level. `OPENAI_E2E_MODEL` (a variable) may
 stay on the `e2e` job. `OPENAI_API_KEY` is only in the step `env:` of
 `OpenAI e2e tests`. Presence checks use the boolean form (`secrets.X != ''`),
-never `$OPENAI_API_KEY`. The pinned proxy install is anonymous and does not
-need a GitHub PAT.
+never `$OPENAI_API_KEY`. The pinned proxy install and isolation-vector
+compare may send `Authorization: Bearer $GITHUB_TOKEN` when the install
+step sets `GITHUB_TOKEN` from `github.token`. They never use a repo PAT.
 
 `e2e` is not a matrix. Only that job sets `environment: openai-e2e`. Unit,
 integration, and mock-upstream tests do not, so they run without approval.
