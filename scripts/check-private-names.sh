@@ -72,7 +72,7 @@ try:
         dirnames[:] = [d for d in dirnames if d != ".git"]
         rel_dir = os.path.relpath(dirpath, root)
         for name in dirnames + filenames:
-            if name == ".git" or name.endswith(".swp"):
+            if name == ".git":
                 continue
             rel = name if rel_dir == "." else os.path.join(rel_dir, name)
             for tok in tokens(rel.replace("\\", "/")):
@@ -80,8 +80,6 @@ try:
                     hits.append(rel)
                     break
         for name in filenames:
-            if name.endswith(".swp"):
-                continue
             path = os.path.join(dirpath, name)
             rel = name if rel_dir == "." else os.path.join(rel_dir, name)
             try:
@@ -158,6 +156,15 @@ self_test() {
   hits="$(scan "${tmp}/selfname" "${extra}")"
   if ! grep -Fq 'check-private-names.sh:1' <<<"${hits}"; then
     echo "self-test: expected hit inside same-basename file" >&2
+    echo "${hits}" >&2
+    failed=1
+  fi
+
+  mkdir -p "${tmp}/swap"
+  printf '%s\n' 'bannedfixturetoken' >"${tmp}/swap/notes.swp"
+  hits="$(scan "${tmp}/swap" "${extra}")"
+  if ! grep -Fq 'notes.swp:1' <<<"${hits}"; then
+    echo "self-test: expected hit inside .swp file" >&2
     echo "${hits}" >&2
     failed=1
   fi
