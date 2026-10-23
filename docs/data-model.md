@@ -188,7 +188,7 @@ from an Azure-style `/deployments/{deployment}/...` path segment.
 | `raw` | Reserved raw normalized payload field; currently not populated by parsers. |
 | `validation` | Spec-check metadata (mode, profile, target, whether request/response were checked). Not a finding list. `target` is `openai` or `openai-compatible`. |
 | `spec_violations` | Findings. `[]` is clean. Absent means validation was not run. |
-| `ignored_fields` | Vendor keywords the proxy ignored. Same empty-vs-absent rule as `spec_violations`. Proxy v0.5.0 labels each entry with `context` (`request`/`response`); `side` is optional. |
+| `ignored_fields` | Vendor keywords and compatible-target relaxations the proxy recorded. Same empty-vs-absent rule as `spec_violations`. Entries have `kind` (`vendor_field`, `compatible_optional`, `response_shape`, …), `severity` (`info` < `warning` < `error`), and `context` (`request`/`response`); `side` is optional. |
 
 Validation vs findings:
 

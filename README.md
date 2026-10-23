@@ -156,6 +156,12 @@ introduce each new user-role message. The same canned prompt in two
 sessions passes; history replay of the other session's turn fails.
 System prompts and tool names are not compared.
 
+Behind an `openai-compatible` target, `NoIgnoredFields()` still reports
+info-level `compatible_optional` rows on every non-streamed answer. Prefer
+`NoSpecViolations()` plus `NoIgnoredFields(llmentary.Side("request"))` (still
+fails on request `vendor_field`), or `NoIgnoredFields(llmentary.MinSeverity("warning"))`
+to drop info. `IgnoreKinds` is the kind-named alias of `IgnoreKeywords`.
+
 See [docs/go-client.md](docs/go-client.md) for the full session, query, and
 assertion API.
 
