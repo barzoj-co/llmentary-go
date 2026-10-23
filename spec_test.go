@@ -160,6 +160,10 @@ func TestNoIgnoredFieldsContract(t *testing.T) {
 	if !(&Assertions{t: t, trace: ignored, fatal: true}).NoIgnoredFields(IgnorePaths("enumDescriptions")) {
 		t.Fatal("ignore_paths should drop enumDescriptions")
 	}
+	wantLine := "#1 openai.chat request tools.0.function.parameters.properties.unit.enumDescriptions: vendor keyword ignored — enumDescriptions"
+	if strings.Join(tb.messages, "\n") != wantLine {
+		t.Fatalf("failure text changed (DOG-55 A2):\n got %q\nwant %q", tb.messages, wantLine)
+	}
 	offTB := &fakeTB{}
 	(&Assertions{t: offTB, trace: off}).NoIgnoredFields()
 	if !strings.Contains(strings.Join(offTB.messages, "\n"), "validation was not run") {
@@ -211,6 +215,77 @@ func TestNoIgnoredFieldsSideUsesContext(t *testing.T) {
 	(&Assertions{t: tb, trace: neither}).NoIgnoredFields(Side("response"))
 	if !strings.Contains(strings.Join(tb.messages, "\n"), "bare") {
 		t.Fatalf("missing side/context must match any Side filter: %q", tb.messages)
+	}
+}
+
+func TestNoIgnoredFieldsMinSeverityAndKinds(t *testing.T) {
+	trace := Trace{SessionID: "s", Calls: []Call{loadSpecCall(t, "ignored-fields-severity.json")}}
+
+	tb := &fakeTB{}
+	(&Assertions{t: tb, trace: trace}).NoIgnoredFields()
+	joined := strings.Join(tb.messages, "\n")
+	for _, want := range []string{"vendor extra foo", "compatible_optional", "warning-level ignored field", "no severity"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("default NoIgnoredFields must keep every entry (DOG-55 A1): missing %q in %q", want, tb.messages)
+		}
+	}
+
+	tb = &fakeTB{}
+	(&Assertions{t: tb, trace: trace}).NoIgnoredFields(MinSeverity("warning"))
+	joined = strings.Join(tb.messages, "\n")
+	if !tb.failed || !strings.Contains(joined, "warning-level ignored field") || !strings.Contains(joined, "no severity") {
+		t.Fatalf("MinSeverity(warning) must keep warning + missing severity: %q", tb.messages)
+	}
+	if strings.Contains(joined, "vendor extra foo") || strings.Contains(joined, "compatible_optional") {
+		t.Fatalf("MinSeverity(warning) must drop info: %q", tb.messages)
+	}
+
+	tb = &fakeTB{}
+	(&Assertions{t: tb, trace: trace}).NoIgnoredFields(MinSeverity("error"))
+	joined = strings.Join(tb.messages, "\n")
+	if !strings.Contains(joined, "no severity") {
+		t.Fatalf("missing severity must fail-closed at min=error: %q", tb.messages)
+	}
+	if strings.Contains(joined, "vendor extra foo") || strings.Contains(joined, "warning-level ignored field") {
+		t.Fatalf("MinSeverity(error) must drop info and warning: %q", tb.messages)
+	}
+
+	if !(&Assertions{t: t, trace: trace, fatal: true}).NoIgnoredFields(IgnoreKinds("vendor_field", "compatible_optional", "response_shape", "unknown_shape")) {
+		t.Fatal("IgnoreKinds must drop every listed kind")
+	}
+	if !(&Assertions{t: t, trace: trace, fatal: true}).NoIgnoredFields(IgnoreKeywords("vendor_field", "compatible_optional", "response_shape", "unknown_shape")) {
+		t.Fatal("IgnoreKeywords must behave like IgnoreKinds")
+	}
+
+	tb = &fakeTB{}
+	(&Assertions{t: tb, trace: trace}).NoIgnoredFields(IgnoreKinds("vendor_field"))
+	joined = strings.Join(tb.messages, "\n")
+	if strings.Contains(joined, "vendor extra foo") {
+		t.Fatalf("IgnoreKinds(vendor_field) must drop request info: %q", tb.messages)
+	}
+	if !strings.Contains(joined, "compatible_optional") {
+		t.Fatalf("IgnoreKinds(vendor_field) must keep compatible_optional: %q", tb.messages)
+	}
+
+	keywordAndKind := ignoredFieldTrace(`{"context":"response","kind":"compatible_optional","keyword":"logprobs","path":"/choices/0","severity":"info","message":"omit logprobs"}`)
+	if !(&Assertions{t: t, trace: keywordAndKind, fatal: true}).NoIgnoredFields(IgnoreKinds("compatible_optional")) {
+		t.Fatal("IgnoreKinds must match kind even when keyword is set")
+	}
+	if !(&Assertions{t: t, trace: keywordAndKind, fatal: true}).NoIgnoredFields(IgnoreKeywords("compatible_optional")) {
+		t.Fatal("IgnoreKeywords must match kind even when keyword is set")
+	}
+
+	if !(&Assertions{t: t, trace: trace, fatal: true}).NoIgnoredFields(Side("request"), IgnoreKinds("vendor_field", "response_shape")) {
+		t.Fatal("Side(request)+IgnoreKinds must drop request vendor_field and warning")
+	}
+	tb = &fakeTB{}
+	(&Assertions{t: tb, trace: trace}).NoIgnoredFields(Side("request"), MinSeverity("warning"))
+	joined = strings.Join(tb.messages, "\n")
+	if strings.Contains(joined, "vendor extra foo") || strings.Contains(joined, "compatible_optional") {
+		t.Fatalf("Side(request)+MinSeverity(warning) leaked info: %q", tb.messages)
+	}
+	if !strings.Contains(joined, "warning-level ignored field") {
+		t.Fatalf("Side(request)+MinSeverity(warning) must keep request warning: %q", tb.messages)
 	}
 }
 
