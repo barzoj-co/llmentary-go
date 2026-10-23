@@ -33,15 +33,15 @@ func TestDefaultReleaseRepo(t *testing.T) {
 }
 
 func TestProxyVersion(t *testing.T) {
-	if ProxyVersion != "v0.5.0" {
-		t.Fatalf("ProxyVersion=%q want v0.5.0", ProxyVersion)
+	if ProxyVersion != "v0.5.1" {
+		t.Fatalf("ProxyVersion=%q want v0.5.1", ProxyVersion)
 	}
 	tag, version := normalizeReleaseVersion(ProxyVersion)
-	if tag != "v0.5.0" || version != "0.5.0" {
+	if tag != "v0.5.1" || version != "0.5.1" {
 		t.Fatalf("normalizeReleaseVersion(%q)=(%q, %q)", ProxyVersion, tag, version)
 	}
 	got := releaseArchiveName(version, "linux", "amd64")
-	if got != "llmentary_0.5.0_linux_amd64.tar.gz" {
+	if got != "llmentary_0.5.1_linux_amd64.tar.gz" {
 		t.Fatalf("releaseArchiveName=%q", got)
 	}
 }
@@ -49,6 +49,16 @@ func TestProxyVersion(t *testing.T) {
 func TestDownloadPinnedProxyRelease(t *testing.T) {
 	if os.Getenv("LLMENTARY_LIVE_DOWNLOAD") != "1" {
 		t.Skip("set LLMENTARY_LIVE_DOWNLOAD=1 to download barzoj-co/llmentary@" + ProxyVersion)
+	}
+	ctxSums, cancelSums := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancelSums()
+	sumsURL := releaseAssetURL("", defaultReleaseRepo, ProxyVersion, checksumsName)
+	liveSums, err := httpGetBytesAccept(ctxSums, http.DefaultClient, sumsURL, optionalGitHubToken(), 1<<20, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(liveSums, publishedPinnedChecksums(t)) {
+		t.Fatalf("live %s checksums.txt does not match testdata/release/checksums.txt", ProxyVersion)
 	}
 	dest := os.Getenv("LLMENTARY_LIVE_DOWNLOAD_DIR")
 	if dest == "" {
@@ -86,8 +96,8 @@ func TestDownloadPinnedProxyRelease(t *testing.T) {
 		t.Fatalf("running downloaded binary: %v\n%s", err, out)
 	}
 	t.Logf("llmentary --version=%s", gotVer)
-	if !strings.Contains(gotVer, "llmentary 0.5.0") || !strings.Contains(gotVer, "go1.26.10") {
-		t.Fatalf("llmentary --version=%q want llmentary 0.5.0 (..., go1.26.10)", gotVer)
+	if !strings.Contains(gotVer, "llmentary 0.5.1") || !strings.Contains(gotVer, "go1.26.10") {
+		t.Fatalf("llmentary --version=%q want llmentary 0.5.1 (..., go1.26.10)", gotVer)
 	}
 }
 
@@ -98,8 +108,8 @@ func TestReleaseArchiveName(t *testing.T) {
 	if got != want {
 		t.Fatalf("releaseArchiveName=%q want %q", got, want)
 	}
-	if got == "llmentary_0.4.1_linux_amd64.tar.gz" {
-		t.Fatal("archive name still uses previous pin v0.4.1")
+	if got == "llmentary_0.5.0_linux_amd64.tar.gz" {
+		t.Fatal("archive name still uses previous pin v0.5.0")
 	}
 	old := "llm-test-lab_" + version + "_linux_amd64.tar.gz"
 	if got == old {
@@ -109,9 +119,9 @@ func TestReleaseArchiveName(t *testing.T) {
 	if _, err := checksumForFile([]byte(sum+"  "+old+"\n"), got); err == nil {
 		t.Fatal("expected checksum lookup to reject llm-test-lab archive names")
 	}
-	stale := "llmentary_0.4.1_linux_amd64.tar.gz"
+	stale := "llmentary_0.5.0_linux_amd64.tar.gz"
 	if _, err := checksumForFile([]byte(sum+"  "+stale+"\n"), got); err == nil {
-		t.Fatal("expected checksum lookup to reject previous pin v0.4.1 assets")
+		t.Fatal("expected checksum lookup to reject previous pin v0.5.0 assets")
 	}
 }
 
@@ -290,7 +300,7 @@ func TestDownloadReleaseRejectsStalePinChecksums(t *testing.T) {
 	archive, sum := testTarGz(t, "llmentary", []byte("payload"))
 	_, version := normalizeReleaseVersion(ProxyVersion)
 	archiveName := releaseArchiveName(version, "linux", "amd64")
-	staleName := "llmentary_0.4.1_linux_amd64.tar.gz"
+	staleName := "llmentary_0.5.0_linux_amd64.tar.gz"
 	mux := http.NewServeMux()
 	mux.HandleFunc("/"+ProxyVersion+"/"+archiveName, func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write(archive)
@@ -315,13 +325,134 @@ func TestDownloadReleaseRejectsStalePinChecksums(t *testing.T) {
 }
 
 func TestPinnedProxyReleaseAssetNames(t *testing.T) {
-	if ProxyVersion != "v0.5.0" {
-		t.Fatalf("ProxyVersion=%q want v0.5.0", ProxyVersion)
+	if ProxyVersion != "v0.5.1" {
+		t.Fatalf("ProxyVersion=%q want v0.5.1", ProxyVersion)
 	}
 	_, version := normalizeReleaseVersion(ProxyVersion)
-	platforms := []struct {
-		goos, goarch, ext string
-	}{
+	sums := publishedPinnedChecksums(t)
+	for _, p := range pinnedReleasePlatforms() {
+		name := releaseArchiveName(version, p.goos, p.goarch)
+		if !strings.HasSuffix(name, "_"+p.goos+"_"+p.goarch+p.ext) {
+			t.Fatalf("releaseArchiveName(%s/%s)=%q", p.goos, p.goarch, name)
+		}
+		if strings.Contains(name, "0.5.0") {
+			t.Fatalf("platform asset still names previous pin: %s", name)
+		}
+		got, err := checksumForFile(sums, name)
+		if err != nil {
+			t.Fatalf("checksum for %s: %v", name, err)
+		}
+		if len(got) != 64 {
+			t.Fatalf("checksum for %s has length %d", name, len(got))
+		}
+	}
+	missing := releaseArchiveName(version, "linux", "amd64")
+	if _, err := checksumForFile([]byte("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef  llmentary_0.5.0_linux_amd64.tar.gz\n"), missing); err == nil {
+		t.Fatal("checksums for previous pin must not satisfy current linux/amd64 asset")
+	}
+}
+
+func TestPinnedReleaseChecksumsMatchPublishedAssets(t *testing.T) {
+	sums := publishedPinnedChecksums(t)
+	_, version := normalizeReleaseVersion(ProxyVersion)
+	if !bytes.Contains(sums, []byte("llmentary_"+version+"_")) {
+		t.Fatalf("testdata checksums do not name pin %s", version)
+	}
+	if bytes.Contains(sums, []byte("llmentary_0.5.0_")) {
+		t.Fatal("testdata checksums still list previous pin v0.5.0")
+	}
+	seen := map[string]string{}
+	for _, p := range pinnedReleasePlatforms() {
+		name := releaseArchiveName(version, p.goos, p.goarch)
+		got, err := checksumForFile(sums, name)
+		if err != nil {
+			t.Fatalf("published checksums missing %s: %v", name, err)
+		}
+		seen[name] = got
+	}
+	if len(seen) != 6 {
+		t.Fatalf("want 6 binary assets, got %d", len(seen))
+	}
+
+	unknown := releaseArchiveName(version, "plan9", "mips")
+	if _, err := checksumForFile(sums, unknown); err == nil {
+		t.Fatalf("unknown platform %s must not have a checksum", unknown)
+	} else if !strings.Contains(err.Error(), "no checksum entry") {
+		t.Fatalf("unknown platform err=%v", err)
+	}
+
+	linuxAMD64 := releaseArchiveName(version, "linux", "amd64")
+	want, err := checksumForFile(sums, linuxAMD64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tampered := bytes.Replace(sums, []byte(want), []byte("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"), 1)
+	got, err := checksumForFile(tampered, linuxAMD64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.EqualFold(got, want) {
+		t.Fatal("tampered checksums still matched the published linux/amd64 digest")
+	}
+}
+
+func TestDownloadReleaseUnknownPlatform(t *testing.T) {
+	sums := publishedPinnedChecksums(t)
+	_, version := normalizeReleaseVersion(ProxyVersion)
+	unknownName := releaseArchiveName(version, "plan9", "mips")
+	mux := http.NewServeMux()
+	mux.HandleFunc("/"+ProxyVersion+"/checksums.txt", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(sums)
+	})
+	mux.HandleFunc("/"+ProxyVersion+"/"+unknownName, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("not-a-release-archive"))
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	_, err := DownloadRelease(context.Background(), DownloadOptions{
+		Version:    ProxyVersion,
+		DestDir:    t.TempDir(),
+		BaseURL:    srv.URL,
+		GOOS:       "plan9",
+		GOARCH:     "mips",
+		HTTPClient: srv.Client(),
+	})
+	if err == nil || !strings.Contains(err.Error(), "no checksum entry") {
+		t.Fatalf("unknown platform err=%v", err)
+	}
+}
+
+func TestDownloadReleasePublishedChecksumMismatch(t *testing.T) {
+	archive, _ := testTarGz(t, "llmentary", []byte("payload"))
+	_, version := normalizeReleaseVersion(ProxyVersion)
+	archiveName := releaseArchiveName(version, "linux", "amd64")
+	sums := publishedPinnedChecksums(t)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/"+ProxyVersion+"/"+archiveName, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(archive)
+	})
+	mux.HandleFunc("/"+ProxyVersion+"/checksums.txt", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(sums)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	_, err := DownloadRelease(context.Background(), DownloadOptions{
+		Version:    ProxyVersion,
+		DestDir:    t.TempDir(),
+		BaseURL:    srv.URL,
+		GOOS:       "linux",
+		GOARCH:     "amd64",
+		HTTPClient: srv.Client(),
+	})
+	if err == nil || !strings.Contains(err.Error(), "checksum mismatch") {
+		t.Fatalf("published checksum vs fake archive err=%v", err)
+	}
+}
+
+func pinnedReleasePlatforms() []struct{ goos, goarch, ext string } {
+	return []struct{ goos, goarch, ext string }{
 		{"darwin", "amd64", ".tar.gz"},
 		{"darwin", "arm64", ".tar.gz"},
 		{"linux", "amd64", ".tar.gz"},
@@ -329,33 +460,18 @@ func TestPinnedProxyReleaseAssetNames(t *testing.T) {
 		{"windows", "amd64", ".zip"},
 		{"windows", "arm64", ".zip"},
 	}
-	sum := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-	var listed strings.Builder
-	for _, p := range platforms {
-		name := releaseArchiveName(version, p.goos, p.goarch)
-		if !strings.HasSuffix(name, "_"+p.goos+"_"+p.goarch+p.ext) {
-			t.Fatalf("releaseArchiveName(%s/%s)=%q", p.goos, p.goarch, name)
-		}
-		if strings.Contains(name, "0.4.1") {
-			t.Fatalf("platform asset still names previous pin: %s", name)
-		}
-		listed.WriteString(sum + "  " + name + "\n")
+}
+
+func publishedPinnedChecksums(t *testing.T) []byte {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join("testdata", "release", "checksums.txt"))
+	if err != nil {
+		t.Fatal(err)
 	}
-	sums := []byte(listed.String())
-	for _, p := range platforms {
-		name := releaseArchiveName(version, p.goos, p.goarch)
-		got, err := checksumForFile(sums, name)
-		if err != nil {
-			t.Fatalf("checksum for %s: %v", name, err)
-		}
-		if got != sum {
-			t.Fatalf("checksum for %s=%q", name, got)
-		}
+	if len(bytes.TrimSpace(data)) == 0 {
+		t.Fatal("testdata/release/checksums.txt is empty")
 	}
-	missing := releaseArchiveName(version, "linux", "amd64")
-	if _, err := checksumForFile([]byte(sum+"  llmentary_0.4.1_linux_amd64.tar.gz\n"), missing); err == nil {
-		t.Fatal("checksums for previous pin must not satisfy current linux/amd64 asset")
-	}
+	return data
 }
 
 func TestOptionalGitHubToken(t *testing.T) {
