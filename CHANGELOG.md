@@ -7,12 +7,6 @@
 
 * **deps:** pin proxy v0.5.1 ([#45](https://github.com/barzoj-co/llmentary-go/issues/45)) ([964b124](https://github.com/barzoj-co/llmentary-go/commit/964b1247c86ed56113b6f5a45bf3cd2fe665f749))
 
-## [Unreleased]
-
-### Bug Fixes
-
-* **deps:** pin proxy v0.5.1
-
 ## [0.5.1](https://github.com/barzoj-co/llmentary-go/compare/v0.5.0...v0.5.1) (2026-10-22)
 
 
