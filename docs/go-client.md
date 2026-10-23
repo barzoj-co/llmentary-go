@@ -328,7 +328,7 @@ not checked — 401s and client aborts), `N violations`, `not checked`,
 |---|---|
 | `validation` | Metadata: mode, profile, target (`openai` / `openai-compatible`), spec SHA, request/response checked, skipped reason |
 | `spec_violations` | Findings. `[]` = clean. Absent = not checked |
-| `ignored_fields` | Vendor keys the proxy ignored (for example `enumDescriptions`). Entries use `context` (`request`/`response`); `Side("request")` reads `context`, then `side`. Missing both is fail-closed. |
+| `ignored_fields` | Vendor keys and compatible-target relaxations the proxy recorded. Entries use `context` (`request`/`response`); `Side("request")` reads `context`, then `side`. Missing both is fail-closed. Info kinds: `vendor_field` (request extra), `compatible_optional` (provider omitted an OpenAI-always-null key, every non-streamed compatible answer), `response_shape`. |
 
 ```go
 val := call.Validation()
@@ -337,8 +337,10 @@ ignored, _ := call.IgnoredFields()
 _ = trace.SpecViolations()
 
 assert.NoSpecViolations() // documented as AssertNoSpecViolations
-assert.NoIgnoredFields()  // documented as AssertNoIgnoredFields
+assert.NoIgnoredFields()  // documented as AssertNoIgnoredFields; default keeps info
 assert.NoIgnoredFields(llmentary.Side("request")) // uses context, then side
+assert.NoIgnoredFields(llmentary.MinSeverity("warning")) // drop info (Python min_severity / JS minSeverity)
+assert.NoIgnoredFields(llmentary.Side("request"), llmentary.IgnoreKinds("vendor_field"))
 assert.NoSpecViolations(
     llmentary.Side("request"),
     llmentary.Calls(1),

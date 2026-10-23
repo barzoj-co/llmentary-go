@@ -1,0 +1,55 @@
+{
+  "id": "call_1",
+  "session_id": "severity-kinds",
+  "seq": 1,
+  "provider": "openai",
+  "api_family": "openai.chat",
+  "http_status": 200,
+  "normalized": {
+    "derived_version": 1,
+    "model": {"requested": "gpt-test"},
+    "finish_reason": "stop",
+    "validation": {
+      "mode": "warn",
+      "profile": "relaxed",
+      "target": "openai-compatible",
+      "request_checked": true,
+      "response_checked": true
+    },
+    "spec_violations": [],
+    "ignored_fields": [
+      {
+        "context": "request",
+        "kind": "vendor_field",
+        "path": "/foo",
+        "pointer": "/foo",
+        "severity": "info",
+        "message": "vendor extra foo"
+      },
+      {
+        "context": "response",
+        "kind": "compatible_optional",
+        "key": "logprobs",
+        "path": "/choices/0",
+        "pointer": "/choices/0",
+        "severity": "info",
+        "message": "OpenAI requires this key (usually null); openai-compatible providers may omit it."
+      },
+      {
+        "context": "request",
+        "kind": "response_shape",
+        "path": "/tools/0",
+        "pointer": "/tools/0",
+        "severity": "warning",
+        "message": "warning-level ignored field"
+      },
+      {
+        "context": "response",
+        "kind": "unknown_shape",
+        "path": "/bare",
+        "pointer": "/bare",
+        "message": "no severity"
+      }
+    ]
+  }
+}
