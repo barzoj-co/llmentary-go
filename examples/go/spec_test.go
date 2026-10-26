@@ -174,16 +174,18 @@ func mockChatUpstreamStreamAware(t *testing.T) *httptest.Server {
 		body, _ := io.ReadAll(r.Body)
 		if bytes.Contains(body, []byte(`"stream":true`)) {
 			w.Header().Set("Content-Type", "text/event-stream")
-			_, _ = w.Write([]byte("data: {\"id\":\"chatcmpl_stream\",\"choices\":[{\"delta\":{\"role\":\"assistant\",\"content\":\"ok\"},\"finish_reason\":null}]}\n\n"))
-			_, _ = w.Write([]byte("data: {\"id\":\"chatcmpl_stream\",\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n"))
+			_, _ = w.Write([]byte("data: {\"id\":\"chatcmpl_stream\",\"object\":\"chat.completion.chunk\",\"created\":1700000000,\"model\":\"gpt-fixture\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"ok\"},\"finish_reason\":null}]}\n\n"))
+			_, _ = w.Write([]byte("data: {\"id\":\"chatcmpl_stream\",\"object\":\"chat.completion.chunk\",\"created\":1700000000,\"model\":\"gpt-fixture\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n"))
 			_, _ = w.Write([]byte("data: [DONE]\n\n"))
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{
 			"id":"chatcmpl_ctrl",
+			"object":"chat.completion",
+			"created":1700000000,
 			"model":"gpt-fixture",
-			"choices":[{"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],
+			"choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],
 			"usage":{"prompt_tokens":4,"completion_tokens":1,"total_tokens":5}
 		}`))
 	}))

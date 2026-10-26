@@ -269,10 +269,7 @@ func skipSpecFinding(side, path, pointer, keyword, kind, severity string, option
 			return true
 		}
 	}
-	if belowMinSeverity(severity, options.MinSeverity) {
-		return true
-	}
-	return false
+	return belowMinSeverity(severity, options.MinSeverity)
 }
 
 func severityRank(level string) (int, bool) {
