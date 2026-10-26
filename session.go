@@ -655,7 +655,7 @@ func (a *Assertions) CallCount(want int, opts ...CallCountOption) bool {
 	a.t.Helper()
 	got, excludedCancelled := countCallsDetailed(a.trace.Calls, applyCallCountOptions(opts))
 	if got != want {
-		if excludedCancelled > 0 {
+		if excludedCancelled > 0 && want > got && want <= got+excludedCancelled {
 			return a.fail("LLM call count mismatch: got %d, want %d"+callCountCancelledHint, got, want, excludedCancelled)
 		}
 		return a.fail("LLM call count mismatch: got %d, want %d", got, want)

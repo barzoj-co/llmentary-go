@@ -477,7 +477,7 @@ func AssertCallCount(t testing.TB, calls []Call, want int, opts ...CallCountOpti
 	options := applyCallCountOptions(opts)
 	got, excludedCancelled := countCallsDetailed(calls, options)
 	if got != want {
-		if excludedCancelled > 0 {
+		if excludedCancelled > 0 && want > got && want <= got+excludedCancelled {
 			t.Fatalf("LLM call count mismatch: got %d, want %d"+callCountCancelledHint, got, want, excludedCancelled)
 		}
 		t.Fatalf("call count mismatch: got=%d want=%d", got, want)
