@@ -448,6 +448,10 @@ func countCalls(calls []Call, options CallCountOptions) int {
 	return count
 }
 
+// callCountCancelledHint is the diagnostic hint that both CallCount failure
+// paths append when cancelled calls were excluded (DOG-58).
+const callCountCancelledHint = " (cancelled excluded: %d; use IncludeCancelled() to count them)"
+
 // countCallsDetailed also reports how many cancelled calls were skipped.
 func countCallsDetailed(calls []Call, options CallCountOptions) (int, int) {
 	got := 0
@@ -474,7 +478,7 @@ func AssertCallCount(t testing.TB, calls []Call, want int, opts ...CallCountOpti
 	got, excludedCancelled := countCallsDetailed(calls, options)
 	if got != want {
 		if excludedCancelled > 0 {
-			t.Fatalf("LLM call count mismatch: got %d, want %d (cancelled excluded: %d; use IncludeCancelled() to count them)", got, want, excludedCancelled)
+			t.Fatalf("LLM call count mismatch: got %d, want %d"+callCountCancelledHint, got, want, excludedCancelled)
 		}
 		t.Fatalf("call count mismatch: got=%d want=%d", got, want)
 	}

@@ -192,6 +192,27 @@ func TestCallCountExcludeAbortedStillWorks(t *testing.T) {
 	}
 }
 
+func TestAssertionsCallCountFailureMentionsExcludedCancelled(t *testing.T) {
+	trace := Trace{SessionID: "hint", Calls: []Call{
+		{ID: "committed", Seq: 1, HTTPStatus: 200, Normalized: Normalized{FinishReason: "stop"}},
+		{ID: "cancelled", Seq: 2, HTTPStatus: 200, ClientAborted: true, AbortPhase: AbortPhaseAfterHeaders},
+	}}
+	tb := &fakeTB{}
+	if trace.Query().Check(tb).CallCount(2) {
+		t.Fatal("Assertions.CallCount(2) should fail when a cancelled call is excluded")
+	}
+	if !tb.failed {
+		t.Fatalf("Assertions.CallCount(2) should record a failure: %+v", tb)
+	}
+	joined := strings.Join(tb.messages, "\n")
+	if !strings.Contains(joined, "LLM call count mismatch: got 1, want 2 (cancelled excluded: 1; use IncludeCancelled() to count them)") {
+		t.Fatalf("failure message missing the excluded-cancellation hint:\n%s", joined)
+	}
+	if strings.Count(joined, "LLM call count mismatch") != 1 {
+		t.Fatalf("hint should extend the mismatch message, not duplicate it:\n%s", joined)
+	}
+}
+
 func TestJSONMatchesAndMustJSON(t *testing.T) {
 	if !jsonMatches(t, nil, nil) {
 		t.Fatal("nil want should match")
