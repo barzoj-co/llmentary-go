@@ -260,7 +260,7 @@ func TestWaitTimeoutErrorMessage(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected timeout error")
 	}
-	want := "wait timed out after 30s on session sess (2 calls so far, still active: 1). Raise LLMENTARY_WAIT_TIMEOUT"
+	want := "wait timed out after 30s on session sess (2 calls so far, still active: 1). Raise LLMENTARY_WAIT_TIMEOUT if the app needs more time"
 	if !strings.Contains(err.Error(), want) {
 		t.Fatalf("timeout error = %q, want substring %q", err, want)
 	}
