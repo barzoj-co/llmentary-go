@@ -93,8 +93,8 @@ func (c Call) specSummary() string {
 }
 
 // SpecOption configures NoSpecViolations / NoIgnoredFields.
-// Contract names: Side, Calls, IgnorePaths, IgnoreKeywords, plus
-// AllowUnvalidated.
+// Contract names: Side, Calls, IgnorePaths, IgnoreKeywords, IgnoreKinds,
+// MinSeverity, plus AllowUnvalidated.
 type SpecOption func(*specOptions)
 
 type specOptions struct {
@@ -102,6 +102,7 @@ type specOptions struct {
 	Seqs             []int
 	IgnorePaths      []string
 	IgnoreKeywords   []string
+	MinSeverity      string
 	AllowUnvalidated bool
 }
 
@@ -120,9 +121,24 @@ func IgnorePaths(paths ...string) SpecOption {
 	return func(o *specOptions) { o.IgnorePaths = append([]string(nil), paths...) }
 }
 
-// IgnoreKeywords skips findings whose keyword matches.
+// IgnoreKeywords skips findings whose keyword or kind matches.
+// On ignored_fields this is the same filter as IgnoreKinds (DOG-55).
 func IgnoreKeywords(keywords ...string) SpecOption {
-	return func(o *specOptions) { o.IgnoreKeywords = append([]string(nil), keywords...) }
+	return func(o *specOptions) { o.IgnoreKeywords = append(o.IgnoreKeywords, keywords...) }
+}
+
+// IgnoreKinds is the kind-named alias of IgnoreKeywords (Python
+// ignore_kinds / JS ignoreKinds). Both match keyword or kind.
+func IgnoreKinds(kinds ...string) SpecOption {
+	return IgnoreKeywords(kinds...)
+}
+
+// MinSeverity skips ignored_fields below this rank (info < warning <
+// error). Empty (the default) keeps every severity so existing
+// NoIgnoredFields calls stay unchanged. A missing or unknown entry
+// severity is fail-closed (kept). Python: min_severity; JS: minSeverity.
+func MinSeverity(level string) SpecOption {
+	return func(o *specOptions) { o.MinSeverity = strings.TrimSpace(level) }
 }
 
 // AllowUnvalidated passes when validation was not run (mode=off or absent).
@@ -181,7 +197,7 @@ func (a *Assertions) assertNoFindings(spec bool, opts ...SpecOption) bool {
 			}
 			checked++
 			for _, finding := range findings {
-				if skipSpecFinding(finding.Side, finding.Path, finding.Pointer, finding.Keyword, options) {
+				if skipSpecFinding(finding.Side, finding.Path, finding.Pointer, finding.Keyword, "", "", options) {
 					continue
 				}
 				lines = append(lines, formatSpecFinding(call, finding.Side, finding.Path, finding.Pointer, finding.Keyword, finding.Message))
@@ -195,7 +211,7 @@ func (a *Assertions) assertNoFindings(spec bool, opts ...SpecOption) bool {
 		checked++
 		for _, finding := range findings {
 			side := finding.FilterSide()
-			if skipSpecFinding(side, finding.Path, finding.Pointer, firstNonEmpty(finding.Keyword, finding.Kind), options) {
+			if skipSpecFinding(side, finding.Path, finding.Pointer, finding.Keyword, finding.Kind, finding.Severity, options) {
 				continue
 			}
 			lines = append(lines, formatSpecFinding(call, side, finding.Path, finding.Pointer, firstNonEmpty(finding.Keyword, finding.Kind), finding.Message))
@@ -236,7 +252,7 @@ func selectSpecCalls(calls []Call, options specOptions) ([]Call, error) {
 	return out, nil
 }
 
-func skipSpecFinding(side, path, pointer, keyword string, options specOptions) bool {
+func skipSpecFinding(side, path, pointer, keyword, kind, severity string, options specOptions) bool {
 	if options.Side != "" {
 		// Empty side/context is fail-closed: a filter must not skip the entry.
 		if side != "" && !strings.EqualFold(side, options.Side) {
@@ -249,11 +265,42 @@ func skipSpecFinding(side, path, pointer, keyword string, options specOptions) b
 		}
 	}
 	for _, ignore := range options.IgnoreKeywords {
-		if strings.EqualFold(keyword, ignore) {
+		// An empty filter value must not match an empty keyword or kind.
+		if ignore == "" {
+			continue
+		}
+		if strings.EqualFold(keyword, ignore) || strings.EqualFold(kind, ignore) {
 			return true
 		}
 	}
-	return false
+	return belowMinSeverity(severity, options.MinSeverity)
+}
+
+func severityRank(level string) (int, bool) {
+	switch strings.ToLower(strings.TrimSpace(level)) {
+	case "info":
+		return 1, true
+	case "warning":
+		return 2, true
+	case "error":
+		return 3, true
+	default:
+		return 0, false
+	}
+}
+
+// belowMinSeverity is true when the entry is strictly weaker than min.
+// Missing/unknown severity is fail-closed (not below).
+func belowMinSeverity(severity, min string) bool {
+	want, ok := severityRank(min)
+	if !ok {
+		return false
+	}
+	got, ok := severityRank(severity)
+	if !ok {
+		return false
+	}
+	return got < want
 }
 
 func pathMatches(path, pointer, ignore string) bool {
