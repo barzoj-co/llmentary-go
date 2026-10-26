@@ -510,9 +510,36 @@ func (q Query) Aborted() Query {
 	return q.keep("aborted", func(c Call) bool { return c.Aborted() })
 }
 
-// Committed keeps calls that were not client-aborted.
+// Committed keeps calls that were not client-aborted. Not cancelled; failed
+// calls are kept. For the strict committed state use Outcome(OutcomeCommitted).
 func (q Query) Committed() Query {
 	return q.keep("committed", func(c Call) bool { return !c.Aborted() })
+}
+
+// Outcome keeps calls whose terminal outcome (DOG-58) is one of states, e.g.
+// Outcome(OutcomeCommitted) or Outcome(OutcomeCancelled, OutcomeFailed).
+// In-flight calls are never matched: they have no outcome.
+func (q Query) Outcome(states ...string) Query {
+	return q.keep(fmt.Sprintf("outcome(%s)", strings.Join(states, ",")), func(c Call) bool {
+		outcome := c.Outcome()
+		for _, state := range states {
+			if outcome == state {
+				return true
+			}
+		}
+		return false
+	})
+}
+
+// Cancelled keeps client-cancelled calls: Outcome(OutcomeCancelled).
+func (q Query) Cancelled() Query {
+	return q.keep("cancelled", func(c Call) bool { return c.Outcome() == OutcomeCancelled })
+}
+
+// Failed keeps failed calls: Outcome(OutcomeFailed). Unlike Committed, this
+// also drops calls that were client-aborted.
+func (q Query) Failed() Query {
+	return q.keep("failed", func(c Call) bool { return c.Outcome() == OutcomeFailed })
 }
 
 func (q Query) Index(i int) Query {
@@ -841,14 +868,40 @@ func (a *Assertions) TTFTBelow(d time.Duration) bool {
 	return true
 }
 
+// NoErrors passes when no matched call ended in OutcomeFailed. Client
+// cancels (both phases) are not errors; use Aborted / NoCancelled / HasError
+// to assert them.
 func (a *Assertions) NoErrors() bool {
 	a.t.Helper()
 	if !a.requireMatchedCalls() {
 		return false
 	}
 	for _, call := range a.trace.Calls {
-		if call.Normalized.Error != nil {
-			return a.fail("unexpected error in call #%d: %+v", call.Seq, call.Normalized.Error)
+		if call.Outcome() == OutcomeFailed {
+			errorName := "-"
+			if call.Normalized.Error != nil && call.Normalized.Error.Normalized != "" {
+				errorName = call.Normalized.Error.Normalized
+			}
+			return a.fail("unexpected failed call #%d (outcome=failed, error=%s, http_status=%d)",
+				call.Seq, errorName, call.HTTPStatus)
+		}
+	}
+	return true
+}
+
+// NoCancelled passes when no matched call was cancelled by a client abort.
+func (a *Assertions) NoCancelled() bool {
+	a.t.Helper()
+	if !a.requireMatchedCalls() {
+		return false
+	}
+	for _, call := range a.trace.Calls {
+		if call.Outcome() == OutcomeCancelled {
+			phase := call.AbortPhase
+			if phase == "" {
+				phase = "-"
+			}
+			return a.fail("unexpected cancelled call #%d (abort_phase=%s)", call.Seq, phase)
 		}
 	}
 	return true
