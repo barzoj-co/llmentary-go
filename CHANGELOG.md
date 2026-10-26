@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.3](https://github.com/barzoj-co/llmentary-go/compare/v0.5.2...v0.5.3) (2026-10-26)
+
+
+### Bug Fixes
+
+* filter ignored_fields by severity and kind ([#48](https://github.com/barzoj-co/llmentary-go/issues/48)) ([bf77bdf](https://github.com/barzoj-co/llmentary-go/commit/bf77bdfe3b98a853178b0ba7eaa7d77cbe8325ce))
+
 ## [Unreleased]
 
 ### Bug Fixes
