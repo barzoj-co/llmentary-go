@@ -859,7 +859,7 @@ func TestE2ECancelledOutcomeAndCallCount(t *testing.T) {
 	// call that was never cancelled.
 	for attempt := 1; attempt <= 2; attempt++ {
 		lm := sessionOnProxy(t, proxy)
-		first, clientErr := cancelOpenAIBeforeHeaders(ctx, apiKey, lm, model)
+		first, clientErr := cancelOpenAIBeforeHeaders(t, ctx, apiKey, proxy, lm, model)
 		race := ""
 		switch {
 		case len(first.Calls) == 0:
@@ -920,7 +920,8 @@ func TestE2ECancelledOutcomeAndCallCount(t *testing.T) {
 	}
 }
 
-func cancelOpenAIBeforeHeaders(ctx context.Context, apiKey string, lm *llmentary.Session, model string) (llmentary.Trace, error) {
+func cancelOpenAIBeforeHeaders(t *testing.T, ctx context.Context, apiKey string, proxy *llmentary.Proxy, lm *llmentary.Session, model string) (llmentary.Trace, error) {
+	t.Helper()
 	body := []byte(`{
 		"model":` + strconv.Quote(model) + `,
 		"messages":[{"role":"user","content":"Write a 500-word story about a barge meeting. Start immediately."}],
@@ -948,7 +949,20 @@ func cancelOpenAIBeforeHeaders(ctx context.Context, apiKey string, lm *llmentary
 		_, _ = io.Copy(io.Discard, resp.Body)
 		_ = resp.Body.Close()
 	}
-	return lm.Wait(ctx), err
+	control, err := llmentary.NewClient(proxy.ControlURL)
+	if err != nil {
+		t.Fatalf("before-headers cancel: control client: %v", err)
+	}
+	// Non-fatal wait: quiet/timeout match what sessionOnProxy configures.
+	calls, waitErr := control.Wait(ctx, lm.SessionID(), 200*time.Millisecond, 30*time.Second)
+	if waitErr != nil {
+		if !llmentary.IsSessionNotFound(waitErr) {
+			t.Fatalf("before-headers cancel: wait session %s: %v", lm.SessionID(), waitErr)
+		}
+		// The cancel beat the proxy's session creation: an empty first attempt.
+		return llmentary.Trace{SessionID: lm.SessionID()}, err
+	}
+	return llmentary.Trace{SessionID: lm.SessionID(), Calls: calls}, err
 }
 
 func cancelOpenAIStreamAfterFirstChunk(ctx context.Context, apiKey string, lm *llmentary.Session, model string) error {
