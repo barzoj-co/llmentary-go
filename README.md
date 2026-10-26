@@ -141,6 +141,12 @@ assert.TokensBelow(1000)
 `NoErrors` / `ToolNotCalled` fail when a filter or `Since` matches zero calls.
 Use `llmentary.AllowEmpty()` only when the test intends an empty match.
 
+`CallCount` counts non-cancelled calls by default (DOG-58): cancelled
+(client-aborted) calls are excluded, `failed` calls still count. Pass
+`llmentary.IncludeCancelled()` for the old all-calls count; a mismatch then
+reports `cancelled excluded: N`. `llmentary.ExcludeAborted()` is deprecated
+(its exclusion is now the default) and `llmentary.ExcludeRetries()` is unchanged.
+
 `Call.ID` is unique across sessions in one proxy process; `Call.Seq` is
 1-based within the session. `Summary()` prints `#<seq> (<id>)`.
 
@@ -204,6 +210,11 @@ lm.Expect(ctx).Aborted()
 
 `http_status` is `0` for a before-headers abort, never `502`.
 `normalized.finish_reason` is `cancelled`.
+
+`NoErrors` checks the terminal outcome and fails only on a `failed` call:
+client cancels (both phases) are not errors; use `Aborted` / `NoCancelled` /
+`HasError` to assert them. `NoCancelled` is the explicit opt-in that fails on
+the first cancelled call.
 
 ## Waiting for calls
 

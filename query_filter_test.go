@@ -36,6 +36,83 @@ func TestQueryCommittedAndAborted(t *testing.T) {
 	}
 }
 
+func TestQueryOutcomeFiltersOnVector(t *testing.T) {
+	t.Parallel()
+	cases := outcomeVectorCases(t)
+	calls := make([]Call, 0, len(cases))
+	wantSeqs := map[string][]int{}
+	for _, tc := range cases {
+		call := outcomeVectorCall(t, tc)
+		calls = append(calls, call)
+		wantSeqs[tc.Outcome] = append(wantSeqs[tc.Outcome], call.Seq)
+	}
+	trace := Trace{SessionID: "vector", Calls: calls}
+
+	cancelled := trace.Query().Cancelled().Calls()
+	if len(cancelled) != 3 || !sameSeqs(ids(cancelled), wantSeqs[OutcomeCancelled]) {
+		t.Fatalf("cancelled=%v want %v", ids(cancelled), wantSeqs[OutcomeCancelled])
+	}
+	failed := trace.Query().Failed().Calls()
+	if len(failed) != 9 || !sameSeqs(ids(failed), wantSeqs[OutcomeFailed]) {
+		t.Fatalf("failed=%v want %v", ids(failed), wantSeqs[OutcomeFailed])
+	}
+	strict := trace.Query().Outcome(OutcomeCommitted).Calls()
+	if len(strict) != 3 || !sameSeqs(ids(strict), wantSeqs[OutcomeCommitted]) {
+		t.Fatalf("outcome(committed)=%v want %v", ids(strict), wantSeqs[OutcomeCommitted])
+	}
+	both := trace.Query().Outcome(OutcomeCancelled, OutcomeFailed).Calls()
+	if len(both) != len(wantSeqs[OutcomeCancelled])+len(wantSeqs[OutcomeFailed]) {
+		t.Fatalf("outcome(cancelled,failed)=%v", ids(both))
+	}
+	committed := trace.Query().Committed().Calls()
+	aborted, nonAbortedFailed := 0, 0
+	for _, call := range calls {
+		if call.Aborted() {
+			aborted++
+		}
+		if call.Outcome() == OutcomeFailed && !call.Aborted() {
+			nonAbortedFailed++
+		}
+	}
+	if len(committed) != 11 || len(committed) != len(calls)-aborted {
+		t.Fatalf("committed=%d want %d (not client-aborted): %v", len(committed), len(calls)-aborted, ids(committed))
+	}
+	if got := trace.Query().Committed().Failed().Len(); got != 8 || got != nonAbortedFailed {
+		t.Fatalf("Committed() must still keep failed calls: got %d want %d", got, nonAbortedFailed)
+	}
+}
+
+func TestQueryOutcomeFilterLabelsInEmptyFailures(t *testing.T) {
+	t.Parallel()
+	trace := Trace{SessionID: "vector", Calls: []Call{
+		{ID: "ok", Seq: 1, HTTPStatus: 200, Normalized: Normalized{FinishReason: "stop"}},
+	}}
+	cases := []struct {
+		name   string
+		query  Query
+		wantIn []string
+	}{
+		{name: "Cancelled", query: trace.Query().Cancelled(), wantIn: []string{"no calls matched query", "cancelled", "session has 1 calls"}},
+		{name: "Failed", query: trace.Query().Failed(), wantIn: []string{"no calls matched query", "failed", "session has 1 calls"}},
+		{name: "Outcome", query: trace.Query().Outcome(OutcomeCancelled, OutcomeFailed), wantIn: []string{"no calls matched query", "outcome(cancelled,failed)", "session has 1 calls"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			tb := &fakeTB{}
+			if tc.query.Check(tb).NoErrors() {
+				t.Fatalf("empty %s filter NoErrors should fail", tc.name)
+			}
+			tb.flush()
+			joined := strings.Join(tb.messages, "\n")
+			for _, want := range tc.wantIn {
+				if !strings.Contains(joined, want) {
+					t.Fatalf("missing %q in:\n%s", want, joined)
+				}
+			}
+		})
+	}
+}
+
 func TestOffersToolAndWithoutTools(t *testing.T) {
 	t.Parallel()
 	trace := goldenMultiCallTrace()
@@ -163,7 +240,8 @@ func goldenMultiCallTrace() Trace {
 	}
 	return Trace{SessionID: "s", Calls: []Call{
 		{
-			Seq: 1,
+			Seq:        1,
+			HTTPStatus: 200,
 			Normalized: Normalized{
 				FinishReason: "stop",
 				OutputText:   `{"route":"specialist"}`,
@@ -172,10 +250,12 @@ func goldenMultiCallTrace() Trace {
 		},
 		{
 			Seq:        2,
+			HTTPStatus: 200,
 			Normalized: Normalized{ToolsDeclared: six, ToolCalls: []ToolCall{{ID: "c1", Name: "get_risks"}}},
 		},
 		{
 			Seq:        3,
+			HTTPStatus: 200,
 			Normalized: Normalized{ToolsDeclared: six, ToolResultsIn: []ToolResult{{CallID: "c1", Name: "get_risks"}}},
 			RawRequest: []byte(`{"messages":[{"role":"tool","tool_call_id":"c1","content":"SEED_Cardiovascular_Risk"}]}`),
 		},
@@ -188,4 +268,16 @@ func ids(calls []Call) []int {
 		out[i] = c.Seq
 	}
 	return out
+}
+
+func sameSeqs(got, want []int) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			return false
+		}
+	}
+	return true
 }

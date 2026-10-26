@@ -86,9 +86,9 @@ func TestPackageCallCountAndTokens(t *testing.T) {
 		{ID: "retry-abort", Seq: 3, ClientAborted: true, RetryCount: &retry},
 		{ID: "retry-ok", Seq: 4, RetryCount: &retry},
 	}
-	AssertCallCount(t, mixed, 4)
+	AssertCallCount(t, mixed, 4, IncludeCancelled())
 	CallCount(t, mixed, 2, ExcludeAborted())
-	CallCount(t, mixed, 2, ExcludeRetries())
+	CallCount(t, mixed, 2, ExcludeRetries(), IncludeCancelled())
 	CallCount(t, mixed, 1, ExcludeAborted(), ExcludeRetries())
 	tb = &fakeTB{}
 	AssertCallCount(tb, mixed, 3, ExcludeAborted())
@@ -106,6 +106,110 @@ func TestPackageCallCountAndTokens(t *testing.T) {
 	AssertTokensBelow(tb, []Call{{ID: "empty"}}, 10)
 	if !tb.fatal || !strings.Contains(strings.Join(tb.messages, "\n"), "no token usage") {
 		t.Fatalf("no usage should fail: %+v", tb)
+	}
+}
+
+func countOutcomeCalls() []Call {
+	return []Call{
+		{ID: "committed", Seq: 1, HTTPStatus: 200, Normalized: Normalized{FinishReason: "stop"}},
+		{ID: "cancelled", Seq: 2, HTTPStatus: 200, ClientAborted: true, AbortPhase: AbortPhaseAfterHeaders},
+		{ID: "failed", Seq: 3, HTTPStatus: 500},
+	}
+}
+
+func TestCallCountExcludesCancelledByDefault(t *testing.T) {
+	calls := countOutcomeCalls()
+	AssertCallCount(t, calls, 2)
+	CallCount(t, calls, 2)
+	CallCount(t, calls, 3, IncludeCancelled())
+	CallCount(t, calls, 2, ExcludeAborted())
+
+	tb := &fakeTB{}
+	AssertCallCount(tb, calls, 3)
+	joined := strings.Join(tb.messages, "\n")
+	if !tb.fatal {
+		t.Fatalf("cancelled calls should not count by default: %+v", tb)
+	}
+	for _, want := range []string{"cancelled excluded: 1", "IncludeCancelled()"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("failure message missing %q:\n%s", want, joined)
+		}
+	}
+
+	tb = &fakeTB{}
+	AssertCallCount(tb, calls, 1)
+	if !tb.fatal {
+		t.Fatalf("failed calls must still count: %+v", tb)
+	}
+
+	tb = &fakeTB{}
+	AssertCallCount(tb, calls, 2, IncludeCancelled())
+	if !tb.fatal {
+		t.Fatalf("IncludeCancelled count 2 should fail on 3: %+v", tb)
+	}
+
+	trace := Trace{SessionID: "counts", Calls: calls}
+	tb = &fakeTB{}
+	if trace.Query().Check(tb).CallCount(3) {
+		t.Fatal("Assertions.CallCount should exclude cancelled calls by default")
+	}
+	if !tb.failed {
+		t.Fatalf("Assertions.CallCount(3) should record a failure: %+v", tb)
+	}
+	tb = &fakeTB{}
+	if !trace.Query().Check(tb).CallCount(2) {
+		t.Fatalf("Assertions.CallCount(2) should pass: %v", tb.messages)
+	}
+	if !trace.Query().Check(tb).CallCount(3, IncludeCancelled()) {
+		t.Fatalf("Assertions.CallCount(3, IncludeCancelled) should pass: %v", tb.messages)
+	}
+	if !trace.Query().Check(tb).CallCount(2, ExcludeAborted()) {
+		t.Fatalf("Assertions.CallCount(2, ExcludeAborted) should pass: %v", tb.messages)
+	}
+}
+
+func TestCallCountExcludeAbortedStillWorks(t *testing.T) {
+	calls := append(countOutcomeCalls(),
+		Call{ID: "alias-abort", Seq: 4, HTTPStatus: 0, Normalized: Normalized{ClientAborted: true}},
+		Call{ID: "aborted-upstream-error", Seq: 5, HTTPStatus: 502, ClientAborted: true, Normalized: Normalized{Error: &CallError{Type: "upstream_error", Source: "upstream"}}},
+	)
+	if got := countCalls(calls, applyCallCountOptions(nil)); got != 3 {
+		t.Fatalf("default count=%d want 3 (committed, failed, aborted-with-upstream-error)", got)
+	}
+	AssertCallCount(t, calls, 2, ExcludeAborted())
+	CallCount(t, calls, 5, IncludeCancelled())
+
+	tb := &fakeTB{}
+	AssertCallCount(tb, calls, 3, ExcludeAborted())
+	if !tb.fatal {
+		t.Fatalf("ExcludeAborted count 3 should fail on 2 counted calls: %+v", tb)
+	}
+
+	trace := Trace{SessionID: "aborts", Calls: calls}
+	tb = &fakeTB{}
+	if !trace.Query().Check(tb).CallCount(2, ExcludeAborted()) {
+		t.Fatalf("Assertions.CallCount(2, ExcludeAborted) should pass: %v", tb.messages)
+	}
+}
+
+func TestAssertionsCallCountFailureMentionsExcludedCancelled(t *testing.T) {
+	trace := Trace{SessionID: "hint", Calls: []Call{
+		{ID: "committed", Seq: 1, HTTPStatus: 200, Normalized: Normalized{FinishReason: "stop"}},
+		{ID: "cancelled", Seq: 2, HTTPStatus: 200, ClientAborted: true, AbortPhase: AbortPhaseAfterHeaders},
+	}}
+	tb := &fakeTB{}
+	if trace.Query().Check(tb).CallCount(2) {
+		t.Fatal("Assertions.CallCount(2) should fail when a cancelled call is excluded")
+	}
+	if !tb.failed {
+		t.Fatalf("Assertions.CallCount(2) should record a failure: %+v", tb)
+	}
+	joined := strings.Join(tb.messages, "\n")
+	if !strings.Contains(joined, "LLM call count mismatch: got 1, want 2 (cancelled excluded: 1; use IncludeCancelled() to count them)") {
+		t.Fatalf("failure message missing the excluded-cancellation hint:\n%s", joined)
+	}
+	if strings.Count(joined, "LLM call count mismatch") != 1 {
+		t.Fatalf("hint should extend the mismatch message, not duplicate it:\n%s", joined)
 	}
 }
 

@@ -398,8 +398,9 @@ func ToolOrder(t testing.TB, calls []Call, names ...string) {
 }
 
 type CallCountOptions struct {
-	ExcludeRetries bool
-	ExcludeAborted bool
+	ExcludeRetries   bool
+	ExcludeAborted   bool
+	IncludeCancelled bool
 }
 
 type CallCountOption func(*CallCountOptions)
@@ -411,9 +412,21 @@ func ExcludeRetries() CallCountOption {
 }
 
 // ExcludeAborted skips client-aborted calls when counting (DOG-50).
+//
+// Deprecated: cancelled calls are excluded by default (DOG-58); kept for
+// compatibility.
 func ExcludeAborted() CallCountOption {
 	return func(o *CallCountOptions) {
 		o.ExcludeAborted = true
+	}
+}
+
+// IncludeCancelled counts cancelled (client-aborted) calls again (DOG-58).
+// It is the opt-out of the DOG-58 default, which excludes cancelled calls;
+// failed calls always count.
+func IncludeCancelled() CallCountOption {
+	return func(o *CallCountOptions) {
+		o.IncludeCancelled = true
 	}
 }
 
@@ -427,8 +440,22 @@ func applyCallCountOptions(opts []CallCountOption) CallCountOptions {
 	return options
 }
 
+// countCalls counts the calls a CallCount assertion compares against.
+// Cancelled calls (Call.Outcome() == OutcomeCancelled) are skipped unless
+// IncludeCancelled() is passed (DOG-58); failed calls always count.
 func countCalls(calls []Call, options CallCountOptions) int {
+	count, _ := countCallsDetailed(calls, options)
+	return count
+}
+
+// callCountCancelledHint is the diagnostic hint that both CallCount failure
+// paths append when cancelled calls were excluded (DOG-58).
+const callCountCancelledHint = " (cancelled excluded: %d; use IncludeCancelled() to count them)"
+
+// countCallsDetailed also reports how many cancelled calls were skipped.
+func countCallsDetailed(calls []Call, options CallCountOptions) (int, int) {
 	got := 0
+	excludedCancelled := 0
 	for _, call := range calls {
 		if options.ExcludeRetries && call.RetryCount != nil && *call.RetryCount > 0 {
 			continue
@@ -436,15 +463,23 @@ func countCalls(calls []Call, options CallCountOptions) int {
 		if options.ExcludeAborted && call.Aborted() {
 			continue
 		}
+		if call.Outcome() == OutcomeCancelled && !options.IncludeCancelled {
+			excludedCancelled++
+			continue
+		}
 		got++
 	}
-	return got
+	return got, excludedCancelled
 }
 
 func AssertCallCount(t testing.TB, calls []Call, want int, opts ...CallCountOption) {
 	t.Helper()
-	got := countCalls(calls, applyCallCountOptions(opts))
+	options := applyCallCountOptions(opts)
+	got, excludedCancelled := countCallsDetailed(calls, options)
 	if got != want {
+		if excludedCancelled > 0 && want > got && want <= got+excludedCancelled {
+			t.Fatalf("LLM call count mismatch: got %d, want %d"+callCountCancelledHint, got, want, excludedCancelled)
+		}
 		t.Fatalf("call count mismatch: got=%d want=%d", got, want)
 	}
 }

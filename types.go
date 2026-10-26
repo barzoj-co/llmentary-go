@@ -56,8 +56,11 @@ type Call struct {
 	// AbortPhase is before_headers or after_headers when ClientAborted.
 	// Omitted when the call is not aborted. A client close after [DONE]
 	// or a terminal Responses event is not an abort.
-	AbortPhase string     `json:"abort_phase,omitempty"`
-	Normalized Normalized `json:"normalized"`
+	AbortPhase string `json:"abort_phase,omitempty"`
+	// RecordedOutcome is the terminal state committed by the proxy
+	// (DOG-58). Absent on older proxies; Outcome() derives it then.
+	RecordedOutcome string     `json:"outcome,omitempty"`
+	Normalized      Normalized `json:"normalized"`
 }
 
 const (
@@ -72,6 +75,12 @@ const (
 	ErrorNormalizedUpstreamTimeout     = "upstream_timeout"
 	ErrorNormalizedUpstreamIdleTimeout = "upstream_idle_timeout"
 	ErrorSourceProxy                   = "proxy"
+
+	// OutcomeCommitted, OutcomeCancelled and OutcomeFailed are the terminal
+	// states of a settled call (DOG-58).
+	OutcomeCommitted = "committed"
+	OutcomeCancelled = "cancelled"
+	OutcomeFailed    = "failed"
 )
 
 func (c *Call) UnmarshalJSON(data []byte) error {
@@ -132,6 +141,44 @@ func abortPhaseFromNormalized(n Normalized) string {
 // falls back to the deprecated normalized.client_aborted alias.
 func (c Call) Aborted() bool {
 	return c.ClientAborted || c.Normalized.ClientAborted
+}
+
+// Outcome reports the terminal state of a settled call: OutcomeCommitted,
+// OutcomeCancelled or OutcomeFailed. The proxy-recorded outcome is returned
+// when it is one of those three values; an absent or unknown recorded value
+// is derived from the error, http_status, client abort and stream_truncated
+// fields, so older proxies work too. It never returns "" for a settled call,
+// and the abort phase (before_headers or after_headers) never changes the
+// outcome. In-flight calls are reported separately as InFlightCall.
+func (c Call) Outcome() string {
+	switch c.RecordedOutcome {
+	case OutcomeCommitted, OutcomeCancelled, OutcomeFailed:
+		return c.RecordedOutcome
+	}
+	err := c.Normalized.Error
+	if err != nil && !clientAbortedError(c, err) {
+		return OutcomeFailed
+	}
+	if c.HTTPStatus >= 400 {
+		return OutcomeFailed
+	}
+	if c.Aborted() {
+		return OutcomeCancelled
+	}
+	if c.Normalized.StreamTruncated {
+		return OutcomeFailed
+	}
+	if c.HTTPStatus == 0 {
+		return OutcomeFailed
+	}
+	return OutcomeCommitted
+}
+
+func clientAbortedError(c Call, err *CallError) bool {
+	if err.Normalized != "client_aborted" || !c.Aborted() {
+		return false
+	}
+	return err.Source == "" || err.Source == "client"
 }
 
 type Upstream struct {
