@@ -218,6 +218,15 @@ func TestNoIgnoredFieldsSideUsesContext(t *testing.T) {
 	}
 }
 
+func TestEmptyIgnoreKeywordDoesNotSkipFindings(t *testing.T) {
+	trace := Trace{SessionID: "s", Calls: []Call{loadSpecCall(t, "ignored-fields-severity.json")}}
+	tb := &fakeTB{}
+	(&Assertions{t: tb, trace: trace}).NoIgnoredFields(IgnoreKeywords(""), IgnoreKinds(""))
+	if !tb.failed || !strings.Contains(strings.Join(tb.messages, "\n"), "vendor extra foo") {
+		t.Fatalf("empty IgnoreKeywords/IgnoreKinds must not skip findings: %q", tb.messages)
+	}
+}
+
 func TestNoIgnoredFieldsMinSeverityAndKinds(t *testing.T) {
 	trace := Trace{SessionID: "s", Calls: []Call{loadSpecCall(t, "ignored-fields-severity.json")}}
 

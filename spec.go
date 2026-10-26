@@ -265,6 +265,10 @@ func skipSpecFinding(side, path, pointer, keyword, kind, severity string, option
 		}
 	}
 	for _, ignore := range options.IgnoreKeywords {
+		// An empty filter value must not match an empty keyword or kind.
+		if ignore == "" {
+			continue
+		}
 		if strings.EqualFold(keyword, ignore) || strings.EqualFold(kind, ignore) {
 			return true
 		}
