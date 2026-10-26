@@ -160,12 +160,40 @@ func (e *WaitTimeoutError) Error() string {
 			soFar += " [" + detail + "]"
 		}
 	}
-	msg := fmt.Sprintf("wait timed out after %s on session %s (%s). Raise %s if the graph needs more time",
-		formatWaitDuration(timeout), e.SessionID, soFar, EnvWaitTimeout)
+	msg := fmt.Sprintf("wait timed out after %s on session %s (%s). %s",
+		formatWaitDuration(timeout), e.SessionID, soFar, e.hint())
 	if e.MinCalls > 0 {
 		msg += fmt.Sprintf(" (min_calls=%d)", e.MinCalls)
 	}
 	return msg
+}
+
+func (e *WaitTimeoutError) hint() string {
+	const genericHint = "Raise " + EnvWaitTimeout + " if the app needs more time."
+	if !e.ActiveKnown || e.Active == 0 || len(e.InFlight) == 0 {
+		return genericHint
+	}
+	awaitingHeaders := false
+	streaming := false
+	maxHeadersMS := 0
+	for _, c := range e.InFlight {
+		switch c.Phase {
+		case InFlightAwaitingHeaders:
+			awaitingHeaders = true
+			if c.ElapsedMS > maxHeadersMS {
+				maxHeadersMS = c.ElapsedMS
+			}
+		case InFlightStreaming:
+			streaming = true
+		}
+	}
+	if awaitingHeaders {
+		return fmt.Sprintf("The upstream has not sent headers for %.1fs; set LLMENTARY_UPSTREAM_HEADER_TIMEOUT to fail such calls fast.", float64(maxHeadersMS)/1000)
+	}
+	if streaming {
+		return "A call is still streaming; set LLMENTARY_UPSTREAM_IDLE_TIMEOUT to fail stalled streams, or raise " + EnvWaitTimeout + " if the app needs more time."
+	}
+	return genericHint
 }
 
 type statusError struct {

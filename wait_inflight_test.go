@@ -278,6 +278,67 @@ func TestWaitTimeoutInFlightBriefFallsBackToPath(t *testing.T) {
 	}
 }
 
+func TestWaitTimeoutHintCasesPinFullMessage(t *testing.T) {
+	avg := func() *WaitTimeoutError {
+		return &WaitTimeoutError{SessionID: "sess", Timeout: 30 * time.Second, CallsSeen: 2, ActiveKnown: true}
+	}
+	tests := []struct {
+		name string
+		wt   *WaitTimeoutError
+		want string
+	}{
+		{
+			name: "active zero",
+			wt: func() *WaitTimeoutError {
+				w := avg()
+				w.Active = 0
+				return w
+			}(),
+			want: "wait timed out after 30s on session sess (2 calls so far, still active: 0). Raise LLMENTARY_WAIT_TIMEOUT if the app needs more time.",
+		},
+		{
+			name: "awaiting headers",
+			wt: func() *WaitTimeoutError {
+				w := avg()
+				w.Active = 1
+				w.InFlight = []InFlightCall{{CallID: "call_1", Seq: 1, Method: "POST", Path: "/v1/responses", APIFamily: "openai.responses", Phase: InFlightAwaitingHeaders, ElapsedMS: 1395}}
+				return w
+			}(),
+			want: "wait timed out after 30s on session sess (2 calls so far, still active: 1 [call_1 seq=1 openai.responses awaiting_headers 1395ms]). The upstream has not sent headers for 1.4s; set LLMENTARY_UPSTREAM_HEADER_TIMEOUT to fail such calls fast.",
+		},
+		{
+			name: "streaming",
+			wt: func() *WaitTimeoutError {
+				w := avg()
+				w.Active = 1
+				w.InFlight = []InFlightCall{{CallID: "call_2", Seq: 2, Method: "POST", Path: "/v1/chat/completions", APIFamily: "openai.chat", Phase: InFlightStreaming, HTTPStatus: 200, ElapsedMS: 800}}
+				return w
+			}(),
+			want: "wait timed out after 30s on session sess (2 calls so far, still active: 1 [call_2 seq=2 openai.chat streaming status=200 800ms]). A call is still streaming; set LLMENTARY_UPSTREAM_IDLE_TIMEOUT to fail stalled streams, or raise LLMENTARY_WAIT_TIMEOUT if the app needs more time.",
+		},
+		{
+			name: "mixed prefers header hint",
+			wt: func() *WaitTimeoutError {
+				w := avg()
+				w.Active = 2
+				w.InFlight = []InFlightCall{
+					{CallID: "call_1", Seq: 1, Method: "POST", Path: "/v1/responses", APIFamily: "openai.responses", Phase: InFlightAwaitingHeaders, ElapsedMS: 1000},
+					{CallID: "call_2", Seq: 2, Method: "POST", Path: "/v1/chat/completions", APIFamily: "openai.chat", Phase: InFlightStreaming, HTTPStatus: 200, ElapsedMS: 5000},
+				}
+				return w
+			}(),
+			want: "wait timed out after 30s on session sess (2 calls so far, still active: 2 [call_1 seq=1 openai.responses awaiting_headers 1000ms; call_2 seq=2 openai.chat streaming status=200 5000ms]). The upstream has not sent headers for 1.0s; set LLMENTARY_UPSTREAM_HEADER_TIMEOUT to fail such calls fast.",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.wt.Error(); got != tc.want {
+				t.Fatalf("message =\n%q\nwant\n%q", got, tc.want)
+			}
+		})
+	}
+}
+
 func waitOn504(t *testing.T, body []byte) error {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
