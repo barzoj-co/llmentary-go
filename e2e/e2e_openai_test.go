@@ -875,6 +875,11 @@ func TestE2ECancelledOutcomeAndCallCount(t *testing.T) {
 			}
 			race = fmt.Sprintf("upstream answered before the client cancel (outcome=%s, http_status=%d, client error: %v)",
 				outcome, first.Calls[0].HTTPStatus, clientErr)
+		case first.Calls[0].AbortPhase != llmentary.AbortPhaseBeforeHeaders:
+			// WroteRequest only proves the request was written; require the
+			// recorded abort phase to be the before-headers abort.
+			race = fmt.Sprintf("call aborted with abort_phase=%q, want %q (client error: %v)",
+				first.Calls[0].AbortPhase, llmentary.AbortPhaseBeforeHeaders, clientErr)
 		}
 		if race != "" {
 			if attempt == 1 {
