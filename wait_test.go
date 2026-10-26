@@ -368,6 +368,125 @@ func TestFormatWaitDurationKeepsSeconds(t *testing.T) {
 	if got := waitQuery(DefaultWaitQuiet, DefaultWaitTimeout, 2); got != "timeout=30s&quiet=500ms&min_calls=2" {
 		t.Fatalf("min_calls query = %q", got)
 	}
+	if got := waitQuery(DefaultWaitQuiet, DefaultWaitTimeout, 0, false); got != "timeout=30s&quiet=500ms" {
+		t.Fatalf("exclude_cancelled=false must not change the query: %q", got)
+	}
+	if got := waitQuery(DefaultWaitQuiet, DefaultWaitTimeout, 2, true); got != "timeout=30s&quiet=500ms&min_calls=2&exclude_cancelled=true" {
+		t.Fatalf("exclude_cancelled query = %q", got)
+	}
+	if got := waitQuery(DefaultWaitQuiet, DefaultWaitTimeout, 0, true); got != "timeout=30s&quiet=500ms&exclude_cancelled=true" {
+		t.Fatalf("exclude_cancelled query without min_calls = %q", got)
+	}
+}
+
+func TestWaitExcludeCancelledQuery(t *testing.T) {
+	var gotQuery string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/wait") {
+			gotQuery = r.URL.RawQuery
+			_ = json.NewEncoder(w).Encode(sessionPayload{ID: "s", Calls: []Call{{ID: "c1"}}})
+			return
+		}
+		if r.Method == http.MethodDelete {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	t.Cleanup(srv.Close)
+
+	tests := []struct {
+		name string
+		opts []WaitOption
+		want string
+	}{
+		{name: "no_options", want: "timeout=5s&quiet=200ms"},
+		{name: "min_calls_only", opts: []WaitOption{MinCalls(2)}, want: "timeout=5s&quiet=200ms&min_calls=2"},
+		{name: "exclude_cancelled_only", opts: []WaitOption{ExcludeCancelled()}, want: "timeout=5s&quiet=200ms&exclude_cancelled=true"},
+		{name: "min_calls_and_exclude_cancelled", opts: []WaitOption{MinCalls(2), ExcludeCancelled()}, want: "timeout=5s&quiet=200ms&min_calls=2&exclude_cancelled=true"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			gotQuery = ""
+			c, err := NewClient(srv.URL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := c.Wait(context.Background(), "s", 200*time.Millisecond, 5*time.Second, tc.opts...); err != nil {
+				t.Fatal(err)
+			}
+			if gotQuery != tc.want {
+				t.Fatalf("wait query = %q, want %q", gotQuery, tc.want)
+			}
+		})
+	}
+
+	t.Run("session_forwards_the_option", func(t *testing.T) {
+		gotQuery = ""
+		lm := New(t, WithControlURL(srv.URL), WithProxyURL(srv.URL), WithWait(200*time.Millisecond, 5*time.Second))
+		_ = lm.Wait(context.Background(), MinCalls(2), ExcludeCancelled())
+		if gotQuery != "timeout=5s&quiet=200ms&min_calls=2&exclude_cancelled=true" {
+			t.Fatalf("session wait query = %q", gotQuery)
+		}
+	})
+}
+
+func TestWaitExcludeCancelledUnsupportedProxy(t *testing.T) {
+	const upgradeMsg = "proxy does not support exclude_cancelled; upgrade the proxy to >= 0.5.3"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/sessions/old/wait":
+			if r.URL.Query().Get("exclude_cancelled") == "true" {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusBadRequest)
+				_, _ = w.Write([]byte(`{"error":{"type":"invalid_param","param":"exclude_cancelled","message":"unknown query parameter \"exclude_cancelled\""}}`))
+				return
+			}
+			_ = json.NewEncoder(w).Encode(sessionPayload{ID: "old", Calls: []Call{{ID: "c1"}}})
+		case r.Method == http.MethodGet && r.URL.Path == "/sessions/other/wait":
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"error":{"type":"invalid_param","param":"min_calls","message":"invalid min_calls"}}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	c, err := NewClient(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	calls, err := c.Wait(context.Background(), "old", 200*time.Millisecond, 3*time.Second, MinCalls(1), ExcludeCancelled())
+	if err == nil {
+		t.Fatal("expected an error from a proxy older than 0.5.3")
+	}
+	if len(calls) != 0 {
+		t.Fatalf("calls=%v on the upgrade path", calls)
+	}
+	if !strings.Contains(err.Error(), upgradeMsg) {
+		t.Fatalf("error = %q, want substring %q", err, upgradeMsg)
+	}
+	if IsWaitTimeout(err) || IsSessionNotFound(err) {
+		t.Fatalf("400 invalid_param must not become a timeout or SessionNotFound: %v", err)
+	}
+
+	calls, err = c.Wait(context.Background(), "old", 200*time.Millisecond, 3*time.Second, MinCalls(1))
+	if err != nil {
+		t.Fatalf("without the option the same proxy must work: %v", err)
+	}
+	if len(calls) != 1 {
+		t.Fatalf("calls=%v", calls)
+	}
+
+	_, err = c.Wait(context.Background(), "other", 200*time.Millisecond, 3*time.Second, MinCalls(1), ExcludeCancelled())
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if strings.Contains(err.Error(), upgradeMsg) {
+		t.Fatalf("a 400 for another param must not claim the exclude_cancelled upgrade: %v", err)
+	}
 }
 
 func TestSessionSinceEmptyNoErrorsFails(t *testing.T) {

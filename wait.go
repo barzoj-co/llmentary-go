@@ -26,6 +26,12 @@ const (
 	envWaitIdleMSDeprecated    = "LLMENTARY_WAIT_IDLE_MS"
 
 	waitHTTPPadding = 5 * time.Second
+
+	// waitParamExcludeCancelled is the wait query parameter that
+	// ExcludeCancelled adds; proxies older than 0.5.3 reject it.
+	waitParamExcludeCancelled = "exclude_cancelled"
+	// errorTypeInvalidParam is the proxy error type for a rejected parameter.
+	errorTypeInvalidParam = "invalid_param"
 )
 
 var deprecatedWaitEnvOnce sync.Once
@@ -46,9 +52,10 @@ func formatWaitDuration(d time.Duration) string {
 
 // WaitOptions configures /sessions/{id}/wait beyond quiet/timeout.
 type WaitOptions struct {
-	MinCalls   int
-	Since      *Mark
-	AllowEmpty bool
+	MinCalls         int
+	Since            *Mark
+	AllowEmpty       bool
+	ExcludeCancelled bool
 }
 
 // Mark is a seq checkpoint from Session.Mark.
@@ -83,6 +90,13 @@ func AllowEmpty() WaitOption {
 	return func(o *WaitOptions) { o.AllowEmpty = true }
 }
 
+// ExcludeCancelled sets wait?exclude_cancelled=true: min_calls counts only
+// non-cancelled settled calls; needs proxy >= 0.5.3. Client.Wait reports a
+// 400 invalid_param for exclude_cancelled as an unsupported-proxy error.
+func ExcludeCancelled() WaitOption {
+	return func(o *WaitOptions) { o.ExcludeCancelled = true }
+}
+
 func applyWaitOptions(opts []WaitOption) WaitOptions {
 	var o WaitOptions
 	for _, opt := range opts {
@@ -94,8 +108,10 @@ func applyWaitOptions(opts []WaitOption) WaitOptions {
 }
 
 // waitQuery is the exact control-API query string. Parameter order is
-// timeout, quiet, then min_calls so it matches the other clients.
-func waitQuery(quiet, timeout time.Duration, minCalls int) string {
+// timeout, quiet, min_calls, then exclude_cancelled so it matches the other
+// clients. Omitting the excludeCancelled argument keeps the query byte-identical
+// to what MinCalls alone sends.
+func waitQuery(quiet, timeout time.Duration, minCalls int, excludeCancelled ...bool) string {
 	var parts []string
 	if timeout > 0 {
 		parts = append(parts, "timeout="+formatWaitDuration(timeout))
@@ -105,6 +121,9 @@ func waitQuery(quiet, timeout time.Duration, minCalls int) string {
 	}
 	if minCalls > 0 {
 		parts = append(parts, fmt.Sprintf("min_calls=%d", minCalls))
+	}
+	if len(excludeCancelled) > 0 && excludeCancelled[0] {
+		parts = append(parts, waitParamExcludeCancelled+"=true")
 	}
 	return strings.Join(parts, "&")
 }

@@ -30,10 +30,10 @@ const (
 	maxArchiveBytes      = 80 << 20
 	downloadUserAgent    = "llmentary-go"
 	// ProxyVersion is the barzoj-co/llmentary GitHub Release this client
-	// pins (tag v0.5.1).
+	// pins (tag v0.5.3).
 	// Pass it to DownloadRelease unless you intentionally select another
 	// tag. The leading v matches the GitHub release tag.
-	ProxyVersion = "v0.5.1"
+	ProxyVersion = "v0.5.3"
 )
 
 // DownloadOptions selects a GitHub Release of barzoj-co/llmentary and

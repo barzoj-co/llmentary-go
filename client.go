@@ -129,6 +129,9 @@ func (c *Client) Version(ctx context.Context) (string, error) {
 	return cfg.Version, nil
 }
 
+// Wait is GET /sessions/{id}/wait. ExcludeCancelled() adds
+// exclude_cancelled=true to the query; a proxy older than 0.5.3 answers 400
+// invalid_param, which Wait reports as an upgrade error.
 func (c *Client) Wait(ctx context.Context, sessionID string, quiet, timeout time.Duration, opts ...WaitOption) ([]Call, error) {
 	waitOpts := applyWaitOptions(opts)
 	httpTimeout := waitHTTPTimeout(quiet, timeout)
@@ -136,9 +139,14 @@ func (c *Client) Wait(ctx context.Context, sessionID string, quiet, timeout time
 	defer cancel()
 
 	var session sessionPayload
-	err := c.getJSONQuery(waitCtx, c.waitHTTPClient(httpTimeout), "/sessions/"+url.PathEscape(sessionID)+"/wait", waitQuery(quiet, timeout, waitOpts.MinCalls), &session)
+	err := c.getJSONQuery(waitCtx, c.waitHTTPClient(httpTimeout), "/sessions/"+url.PathEscape(sessionID)+"/wait", waitQuery(quiet, timeout, waitOpts.MinCalls, waitOpts.ExcludeCancelled), &session)
 	if err == nil {
 		return session.Calls, nil
+	}
+	if waitOpts.ExcludeCancelled {
+		if se := statusErrorOf(err); se != nil && se.status == http.StatusBadRequest && se.typ == errorTypeInvalidParam && se.param == waitParamExcludeCancelled {
+			return nil, fmt.Errorf("proxy does not support exclude_cancelled; upgrade the proxy to >= 0.5.3")
+		}
 	}
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
