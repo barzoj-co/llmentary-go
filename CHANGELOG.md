@@ -7,12 +7,6 @@
 
 * filter ignored_fields by severity and kind ([#48](https://github.com/barzoj-co/llmentary-go/issues/48)) ([bf77bdf](https://github.com/barzoj-co/llmentary-go/commit/bf77bdfe3b98a853178b0ba7eaa7d77cbe8325ce))
 
-## [Unreleased]
-
-### Bug Fixes
-
-* filter ignored_fields by min severity and kind
-
 ## [0.5.2](https://github.com/barzoj-co/llmentary-go/compare/v0.5.1...v0.5.2) (2026-10-23)
 
 
