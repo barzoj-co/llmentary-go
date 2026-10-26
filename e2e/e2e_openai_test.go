@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptrace"
 	"os"
 	"strconv"
 	"strings"
@@ -844,6 +845,161 @@ func TestE2EClientAbortedBeforeHeaders(t *testing.T) {
 	if !lm.Check(ctx).Aborted() {
 		t.Fatal("Aborted() should pass")
 	}
+}
+
+func TestE2ECancelledOutcomeAndCallCount(t *testing.T) {
+	apiKey := requireOpenAIKey(t)
+	model := e2eModel()
+	proxy := startE2EProxy(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	// A fast upstream can answer before the client cancel lands. Retry the
+	// scenario once in a fresh session, then skip instead of passing on a
+	// call that was never cancelled.
+	for attempt := 1; attempt <= 2; attempt++ {
+		lm := sessionOnProxy(t, proxy)
+		first, clientErr := cancelOpenAIBeforeHeaders(t, ctx, apiKey, proxy, lm, model)
+		race := ""
+		switch {
+		case len(first.Calls) == 0:
+			race = fmt.Sprintf("proxy recorded no settled call (client error: %v)", clientErr)
+		case len(first.Calls) > 1:
+			t.Fatalf("attempt %d: want 1 settled call after the before-headers cancel, got %d:\n%s",
+				attempt, len(first.Calls), first.Summary())
+		case first.Calls[0].Outcome() != llmentary.OutcomeCancelled:
+			outcome := first.Calls[0].Outcome()
+			if outcome != llmentary.OutcomeCommitted {
+				t.Fatalf("attempt %d: before-headers cancel recorded outcome=%q want cancelled:\n%s",
+					attempt, outcome, first.Summary())
+			}
+			race = fmt.Sprintf("upstream answered before the client cancel (outcome=%s, http_status=%d, client error: %v)",
+				outcome, first.Calls[0].HTTPStatus, clientErr)
+		case first.Calls[0].AbortPhase != llmentary.AbortPhaseBeforeHeaders:
+			// WroteRequest only proves the request was written; require the
+			// recorded abort phase to be the before-headers abort.
+			race = fmt.Sprintf("call aborted with abort_phase=%q, want %q (client error: %v)",
+				first.Calls[0].AbortPhase, llmentary.AbortPhaseBeforeHeaders, clientErr)
+		}
+		if race != "" {
+			if attempt == 1 {
+				continue
+			}
+			t.Skipf("no before-headers cancel after 2 attempts: %s", race)
+		}
+
+		if err := cancelOpenAIStreamAfterFirstChunk(ctx, apiKey, lm, model); err != nil {
+			t.Fatalf("attempt %d: stream cancel after the first chunk: %v", attempt, err)
+		}
+
+		trace := lm.Wait(ctx, llmentary.MinCalls(2))
+		if len(trace.Calls) != 2 {
+			t.Fatalf("attempt %d: want 2 settled calls, got %d:\n%s", attempt, len(trace.Calls), trace.Summary())
+		}
+		for _, call := range trace.Calls {
+			if outcome := call.Outcome(); outcome != llmentary.OutcomeCancelled {
+				t.Fatalf("call #%d outcome=%q want cancelled:\n%s", call.Seq, outcome, trace.Summary())
+			}
+		}
+		if !trace.Query().Expect(t).NoErrors() {
+			t.Fatal("NoErrors should pass when both calls are cancelled")
+		}
+		rec := &e2eRecorder{}
+		if trace.Query().Check(rec).NoCancelled() {
+			t.Fatal("NoCancelled should fail when a call is cancelled")
+		}
+		rec.flush()
+		if joined := strings.Join(rec.messages, "\n"); !strings.Contains(joined, "unexpected cancelled call") {
+			t.Fatalf("NoCancelled failure missing cancelled call:\n%s", joined)
+		}
+		if n := trace.Query().Cancelled().Len(); n != 2 {
+			t.Fatalf("Cancelled() matched %d calls, want 2:\n%s", n, trace.Summary())
+		}
+		if !trace.Query().Expect(t).CallCount(0) {
+			t.Fatal("CallCount(0) should pass: cancelled calls are excluded by default")
+		}
+		if !trace.Query().Expect(t).CallCount(2, llmentary.IncludeCancelled()) {
+			t.Fatal("CallCount(2, IncludeCancelled) should pass")
+		}
+		return
+	}
+}
+
+func cancelOpenAIBeforeHeaders(t *testing.T, ctx context.Context, apiKey string, proxy *llmentary.Proxy, lm *llmentary.Session, model string) (llmentary.Trace, error) {
+	t.Helper()
+	body := []byte(`{
+		"model":` + strconv.Quote(model) + `,
+		"messages":[{"role":"user","content":"Write a 500-word story about a barge meeting. Start immediately."}],
+		"stream":false,
+		"temperature":0
+	}`)
+	reqCtx, reqCancel := context.WithCancel(ctx)
+	defer reqCancel()
+	// Cancel the moment the request has been written upstream: the client
+	// drops the connection before any response header arrives.
+	trace := &httptrace.ClientTrace{
+		WroteRequest: func(httptrace.WroteRequestInfo) { reqCancel() },
+	}
+	req, err := http.NewRequestWithContext(httptrace.WithClientTrace(reqCtx, trace), http.MethodPost,
+		lm.OpenAIBaseURL("openai")+"/chat/completions", bytes.NewReader(body))
+	if err != nil {
+		return llmentary.Trace{}, err
+	}
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	req.Header.Set("Content-Type", "application/json")
+	key, value := lm.Header()
+	req.Header.Set(key, value)
+	resp, err := http.DefaultClient.Do(req)
+	if resp != nil {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
+	}
+	control, err := llmentary.NewClient(proxy.ControlURL)
+	if err != nil {
+		t.Fatalf("before-headers cancel: control client: %v", err)
+	}
+	// Non-fatal wait: quiet/timeout match what sessionOnProxy configures.
+	calls, waitErr := control.Wait(ctx, lm.SessionID(), 200*time.Millisecond, 30*time.Second)
+	if waitErr != nil {
+		if !llmentary.IsSessionNotFound(waitErr) {
+			t.Fatalf("before-headers cancel: wait session %s: %v", lm.SessionID(), waitErr)
+		}
+		// The cancel beat the proxy's session creation: an empty first attempt.
+		return llmentary.Trace{SessionID: lm.SessionID()}, err
+	}
+	return llmentary.Trace{SessionID: lm.SessionID(), Calls: calls}, err
+}
+
+func cancelOpenAIStreamAfterFirstChunk(ctx context.Context, apiKey string, lm *llmentary.Session, model string) error {
+	body := []byte(`{
+		"model":` + strconv.Quote(model) + `,
+		"messages":[{"role":"user","content":"Write a 500-word story about a barge meeting. Start immediately."}],
+		"stream":true,
+		"temperature":0
+	}`)
+	reqCtx, reqCancel := context.WithCancel(ctx)
+	defer reqCancel()
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost,
+		lm.OpenAIBaseURL("openai")+"/chat/completions", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	req.Header.Set("Content-Type", "application/json")
+	key, value := lm.Header()
+	req.Header.Set(key, value)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	chunk := make([]byte, 256)
+	if _, err := resp.Body.Read(chunk); err != nil && err != io.EOF {
+		return fmt.Errorf("first chunk: %w", err)
+	}
+	reqCancel()
+	_, _ = io.Copy(io.Discard, resp.Body)
+	return nil
 }
 
 func TestE2ESummaryRequestOnlyOn401AndAbort(t *testing.T) {

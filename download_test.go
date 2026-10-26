@@ -33,15 +33,15 @@ func TestDefaultReleaseRepo(t *testing.T) {
 }
 
 func TestProxyVersion(t *testing.T) {
-	if ProxyVersion != "v0.5.1" {
-		t.Fatalf("ProxyVersion=%q want v0.5.1", ProxyVersion)
+	if ProxyVersion != "v0.5.3" {
+		t.Fatalf("ProxyVersion=%q want v0.5.3", ProxyVersion)
 	}
 	tag, version := normalizeReleaseVersion(ProxyVersion)
-	if tag != "v0.5.1" || version != "0.5.1" {
+	if tag != "v0.5.3" || version != "0.5.3" {
 		t.Fatalf("normalizeReleaseVersion(%q)=(%q, %q)", ProxyVersion, tag, version)
 	}
 	got := releaseArchiveName(version, "linux", "amd64")
-	if got != "llmentary_0.5.1_linux_amd64.tar.gz" {
+	if got != "llmentary_0.5.3_linux_amd64.tar.gz" {
 		t.Fatalf("releaseArchiveName=%q", got)
 	}
 }
@@ -96,8 +96,8 @@ func TestDownloadPinnedProxyRelease(t *testing.T) {
 		t.Fatalf("running downloaded binary: %v\n%s", err, out)
 	}
 	t.Logf("llmentary --version=%s", gotVer)
-	if !strings.Contains(gotVer, "llmentary 0.5.1") || !strings.Contains(gotVer, "go1.26.10") {
-		t.Fatalf("llmentary --version=%q want llmentary 0.5.1 (..., go1.26.10)", gotVer)
+	if !strings.Contains(gotVer, "llmentary 0.5.3") || !strings.Contains(gotVer, "go1.26.10") {
+		t.Fatalf("llmentary --version=%q want llmentary 0.5.3 (..., go1.26.10)", gotVer)
 	}
 }
 
@@ -325,8 +325,8 @@ func TestDownloadReleaseRejectsStalePinChecksums(t *testing.T) {
 }
 
 func TestPinnedProxyReleaseAssetNames(t *testing.T) {
-	if ProxyVersion != "v0.5.1" {
-		t.Fatalf("ProxyVersion=%q want v0.5.1", ProxyVersion)
+	if ProxyVersion != "v0.5.3" {
+		t.Fatalf("ProxyVersion=%q want v0.5.3", ProxyVersion)
 	}
 	_, version := normalizeReleaseVersion(ProxyVersion)
 	sums := publishedPinnedChecksums(t)

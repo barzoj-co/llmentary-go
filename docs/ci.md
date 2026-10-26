@@ -12,7 +12,7 @@ Workflows live under `.github/workflows/`. The main pipeline is `ci.yml`:
   when the PR head branch is `release-please--*`). Missing integration
   profile fails the required `test` check — same idea as `e2e-gate`.
 - `integration`: non-fork pull requests and pushes to `main`; downloads the
-  pinned `ProxyVersion` GitHub Release of `barzoj-co/llmentary` (`v0.5.1`)
+  pinned `ProxyVersion` GitHub Release of `barzoj-co/llmentary` (`v0.5.3`)
   with `llmentary.DownloadRelease` (checksum-verified, public
   download). The same step drift-checks `testdata/isolation` against
   the public `codeload.github.com` archive for that `ProxyVersion` tag, not
@@ -23,7 +23,7 @@ Workflows live under `.github/workflows/`. The main pipeline is `ci.yml`:
   workflow artifact for the `test` job gate
 - `e2e`: same event filter as `integration`; uses the `openai-e2e` environment
   so each live run waits for maintainer approval; installs the same released
-  `v0.5.1` binary (no build from proxy main), downloads and compiles the
+  `v0.5.3` binary (no build from proxy main), downloads and compiles the
   e2e module without secrets, then runs the live OpenAI suite
 - `e2e-gate`: always runs. Green when `e2e` succeeded, or when `e2e` was
   skipped on a fork PR (`skipped (fork, no secrets)`). Same-repo PRs still
