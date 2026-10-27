@@ -17,11 +17,13 @@ Documentation: **https://barzoj-co.github.io/llmentary/**
 ## Install
 
 ```bash
-go get github.com/barzoj-co/llmentary-go
+go get github.com/barzoj-co/llmentary-go github.com/openai/openai-go@v1.12.0
 go install github.com/barzoj-co/llmentary/cmd/llmentary@latest   # the proxy
 ```
 
-Start the proxy before running tests:
+`go install` puts the binary in `$(go env GOPATH)/bin`. Add that directory to
+`PATH`, or set `LLMENTARY_BIN` to the binary. Start the proxy before running
+tests:
 
 ```bash
 llmentary --listen 127.0.0.1:7777 --control 127.0.0.1:7778
