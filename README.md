@@ -27,7 +27,15 @@ Start the proxy before running tests:
 llmentary --listen 127.0.0.1:7777 --control 127.0.0.1:7778
 ```
 
-Or start it from the test with `llmentary.StartForTest(t)`.
+Or start it from the test and pass its URLs to `New`:
+
+```go
+proxy := llmentary.StartForTest(t)
+lm := llmentary.New(t,
+	llmentary.WithProxyURL(proxy.ProxyURL),
+	llmentary.WithControlURL(proxy.ControlURL),
+)
+```
 
 ## Quickstart
 
@@ -40,11 +48,13 @@ func TestModelCallsWeatherTool(t *testing.T) {
 		option.WithAPIKey(os.Getenv("OPENAI_API_KEY")),
 		option.WithBaseURL(lm.OpenAIBaseURL("")),
 		option.WithHTTPClient(lm.HTTPClient()), // tags requests with this test's session
+		option.WithMaxRetries(0),                // a retry would be a second recorded call
 	)
 	_, err := client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
-		Model:    "gpt-4.1-mini",
-		Messages: []openai.ChatCompletionMessageParamUnion{openai.UserMessage("What's the weather in Paris?")},
-		Tools:    []openai.ChatCompletionToolParam{weatherTool},
+		Model:      "gpt-4.1-mini",
+		Messages:   []openai.ChatCompletionMessageParamUnion{openai.UserMessage("What's the weather in Paris?")},
+		Tools:      []openai.ChatCompletionToolParam{weatherTool},
+		ToolChoice: openai.ChatCompletionToolChoiceOptionUnionParam{OfAuto: openai.String("required")},
 	})
 	if err != nil {
 		t.Fatal(err)
