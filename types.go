@@ -50,7 +50,7 @@ type Call struct {
 	// (httptrace.WroteRequest). A header timeout or cancel can leave
 	// this false.
 	UpstreamCalled bool `json:"upstream_called,omitempty"`
-	// ClientAborted is a top-level Call field (DOG-27). Older proxies
+	// ClientAborted is a top-level Call field. Older proxies
 	// only set normalized.client_aborted; UnmarshalJSON copies that alias.
 	ClientAborted bool `json:"client_aborted,omitempty"`
 	// AbortPhase is before_headers or after_headers when ClientAborted.
@@ -58,7 +58,7 @@ type Call struct {
 	// or a terminal Responses event is not an abort.
 	AbortPhase string `json:"abort_phase,omitempty"`
 	// RecordedOutcome is the terminal state committed by the proxy
-	// (DOG-58). Absent on older proxies; Outcome() derives it then.
+	//. Absent on older proxies; Outcome() derives it then.
 	RecordedOutcome string     `json:"outcome,omitempty"`
 	Normalized      Normalized `json:"normalized"`
 }
@@ -71,13 +71,13 @@ const (
 	SpecTargetOpenAI           = "openai"
 	SpecTargetOpenAICompatible = "openai-compatible"
 
-	// CallError.Normalized values for optional upstream timeouts (DOG-39).
+	// CallError.Normalized values for optional upstream timeouts.
 	ErrorNormalizedUpstreamTimeout     = "upstream_timeout"
 	ErrorNormalizedUpstreamIdleTimeout = "upstream_idle_timeout"
 	ErrorSourceProxy                   = "proxy"
 
 	// OutcomeCommitted, OutcomeCancelled and OutcomeFailed are the terminal
-	// states of a settled call (DOG-58).
+	// states of a settled call.
 	OutcomeCommitted = "committed"
 	OutcomeCancelled = "cancelled"
 	OutcomeFailed    = "failed"
@@ -290,7 +290,7 @@ func (f IgnoredField) FilterSide() string {
 	return strings.TrimSpace(f.Side)
 }
 
-// SessionSpecCounts is GET /sessions[].spec (DOG-51).
+// SessionSpecCounts is GET /sessions[].spec.
 type SessionSpecCounts struct {
 	Checked     int `json:"checked"`
 	Clean       int `json:"clean"`

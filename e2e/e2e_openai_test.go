@@ -287,7 +287,7 @@ func TestE2EDefaultUpstream(t *testing.T) {
 func TestE2EUnknownNestedFieldSpecViolation(t *testing.T) {
 	apiKey := requireOpenAIKey(t)
 	model := e2eModel()
-	// LTL-API-2 L2: unknown nested message field, 200 upstream.
+	// L2: unknown nested message field, 200 upstream.
 	// Relaxed leaves message objects open; strict flags the extra field.
 	lm := newSessionOnProxy(t, true,
 		[]llmentary.StartOption{llmentary.WithExtraArgs("--spec-profile=strict")},
@@ -439,7 +439,7 @@ func TestE2EUnknownPrefixNotForwarded(t *testing.T) {
 	apiKey := requireOpenAIKey(t)
 	lm := newSession(t)
 	body := []byte(`{"model":` + strconv.Quote(e2eModel()) + `,"messages":[{"role":"user","content":"hi"}]}`)
-	req, err := http.NewRequest(http.MethodPost, lm.BaseURL("")+"/dogfood/v1/chat/completions", bytes.NewReader(body))
+	req, err := http.NewRequest(http.MethodPost, lm.BaseURL("")+"/myapp/v1/chat/completions", bytes.NewReader(body))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1115,9 +1115,9 @@ func TestE2EIsolatedFromLaterCallTwoNewUserMessages(t *testing.T) {
 		}
 	}
 
-	open := "DOG-33 opening for " + lmP.SessionID() + ". Reply with the single word ok."
-	second := "DOG-33 second for " + lmP.SessionID() + ". Reply with the single word ok."
-	third := "DOG-33 third for " + lmP.SessionID() + ". Reply with the single word ok."
+	open := "Isolation opening for " + lmP.SessionID() + ". Reply with the single word ok."
+	second := "Isolation second for " + lmP.SessionID() + ". Reply with the single word ok."
+	third := "Isolation third for " + lmP.SessionID() + ". Reply with the single word ok."
 	chatPath(lmP, []openai.ChatCompletionMessageParamUnion{openai.UserMessage(open)})
 	chatPath(lmP, []openai.ChatCompletionMessageParamUnion{
 		openai.UserMessage(open),

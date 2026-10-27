@@ -354,8 +354,8 @@ func TestTraceSummaryOmitsUnknownFinishAndCallKeys(t *testing.T) {
 			SessionSource: "path",
 			Normalized: Normalized{
 				FinishReason:  "tool_calls",
-				ToolsDeclared: []ToolDecl{{Name: "get_risks"}},
-				ToolCalls:     []ToolCall{{Index: 0, Name: "get_risks", ArgumentsRaw: `{"n":1}`}},
+				ToolsDeclared: []ToolDecl{{Name: "get_order_status"}},
+				ToolCalls:     []ToolCall{{Index: 0, Name: "get_order_status", ArgumentsRaw: `{"n":1}`}},
 			},
 		},
 		{

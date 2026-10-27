@@ -81,7 +81,7 @@ is `llmentary.Session` (`lm := llmentary.New(t)`).
 | `stream` | boolean | Whether the response was detected as SSE. |
 | `http_status` | number | Upstream HTTP status, or proxy error status. `0` on a before-headers client abort (never 502). Header timeout is `504`. |
 | `upstream_called` | boolean | True when the outbound request was written. False if a header timeout or cancel happens before that. |
-| `client_aborted` | boolean | Top-level abort flag (DOG-27). Older proxies only set `normalized.client_aborted`; the Go client copies that alias. |
+| `client_aborted` | boolean | Top-level abort flag. Older proxies only set `normalized.client_aborted`; the Go client copies that alias. |
 | `abort_phase` | string, optional | `before_headers` or `after_headers` when aborted. Absent on older proxies (log-only). |
 | `retry_count` | number, optional | Integer parsed from `x-stainless-retry-count`. |
 | `retry_after` | string, optional | `retry-after-ms` or `retry-after` response header. |

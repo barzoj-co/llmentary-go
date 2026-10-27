@@ -16,7 +16,7 @@ type outcomeVectorCase struct {
 	Call       json.RawMessage `json:"call"`
 }
 
-// TestCallOutcomeVector runs the shared DOG-58 vector, including the
+// TestCallOutcomeVector runs the shared outcome vector, including the
 // client_only recorded-outcome cases that the proxy classifier skips.
 func TestCallOutcomeVector(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join("testdata", "control", "call_outcomes.json"))

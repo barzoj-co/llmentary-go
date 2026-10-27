@@ -178,7 +178,7 @@ func TestAssertionErrorAndTokenEdges(t *testing.T) {
 }
 
 func TestSpecPackageAliases(t *testing.T) {
-	clean := Trace{SessionID: "s", Calls: []Call{loadSpecCall(t, "chat-service-run1-clean.json")}}
+	clean := Trace{SessionID: "s", Calls: []Call{loadSpecCall(t, "support-bot-run1-clean.json")}}
 	AssertNoSpecViolations(t, clean)
 	AssertNoIgnoredFields(t, clean)
 	ignored := Trace{SessionID: "s", Calls: []Call{loadSpecCall(t, "ignored-fields.json")}}

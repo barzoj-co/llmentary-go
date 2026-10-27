@@ -124,8 +124,8 @@ func TestIsolatedFromFixtures(t *testing.T) {
 	t.Run("same_canned_question", func(t *testing.T) {
 		prompt := `{
 			"messages":[
-				{"role":"system","content":"You are a health assistant. Use get_bioage."},
-				{"role":"user","content":"What is my biological age?"}
+				{"role":"system","content":"You are a support assistant. Use get_order."},
+				{"role":"user","content":"Where is my order?"}
 			]
 		}`
 		left := isolationCall("a", "call_a", 1, "path", prompt)
@@ -139,7 +139,7 @@ func TestIsolatedFromFixtures(t *testing.T) {
 
 	t.Run("short_hi_not_substring", func(t *testing.T) {
 		hi := isolationCall("a", "call_hi", 1, "", `{"messages":[{"role":"user","content":"Hi"}]}`)
-		long := isolationCall("b", "call_long", 1, "", `{"messages":[{"role":"user","content":"Hi, what is my biological age? This text is long."}]}`)
+		long := isolationCall("b", "call_long", 1, "", `{"messages":[{"role":"user","content":"Hi, where is my order? This text is long."}]}`)
 		tb := &fakeTB{}
 		a := Trace{SessionID: "a", Calls: []Call{hi}}.Query().Check(tb)
 		if !a.IsolatedFrom("b", WithOtherTrace(Trace{SessionID: "b", Calls: []Call{long}})) {
@@ -150,16 +150,16 @@ func TestIsolatedFromFixtures(t *testing.T) {
 	t.Run("history_replay", func(t *testing.T) {
 		origin := isolationCall("a", "call_a", 1, "", `{
 			"messages":[
-				{"role":"system","content":"You are a health assistant."},
-				{"role":"user","content":"What is my biological age?"}
+				{"role":"system","content":"You are a support assistant."},
+				{"role":"user","content":"Where is my order?"}
 			]
 		}`)
 		replay := isolationCall("b", "call_b", 1, "", `{
 			"messages":[
-				{"role":"system","content":"You are a health assistant."},
-				{"role":"user","content":"What is my biological age?"},
+				{"role":"system","content":"You are a support assistant."},
+				{"role":"user","content":"Where is my order?"},
 				{"role":"assistant","content":"42"},
-				{"role":"user","content":"And what about my BMI?"}
+				{"role":"user","content":"And what about the refund?"}
 			]
 		}`)
 		tb := &fakeTB{}
@@ -169,7 +169,7 @@ func TestIsolatedFromFixtures(t *testing.T) {
 		}
 		joined := strings.Join(tb.messages, "\n")
 		for _, want := range []string{
-			"user text 'What is my biological age?'",
+			"user text 'Where is my order?'",
 			"also introduced by session a #1 (call_a)",
 			"appears in session b #1 (call_b)",
 		} {
@@ -265,13 +265,13 @@ func TestIsolatedFromFixtures(t *testing.T) {
 	t.Run("foreign_session_trace_calls_do_not_count_as_sent", func(t *testing.T) {
 		own := isolationCall("a", "call_a", 2, "", `{
 			"messages":[
-				{"role":"user","content":"What is my biological age?"},
+				{"role":"user","content":"Where is my order?"},
 				{"role":"assistant","content":"42"},
-				{"role":"user","content":"And what about my BMI?"}
+				{"role":"user","content":"And what about the refund?"}
 			]
 		}`)
-		foreign := isolationCall("other", "call_foreign", 1, "", `{"messages":[{"role":"user","content":"What is my biological age?"}]}`)
-		y := isolationCall("b", "call_b", 1, "", `{"messages":[{"role":"user","content":"What is my biological age?"}]}`)
+		foreign := isolationCall("other", "call_foreign", 1, "", `{"messages":[{"role":"user","content":"Where is my order?"}]}`)
+		y := isolationCall("b", "call_b", 1, "", `{"messages":[{"role":"user","content":"Where is my order?"}]}`)
 		full := Trace{SessionID: "a", Calls: []Call{foreign, own}}
 		tb := &fakeTB{}
 		if full.Query().Since(Mark{Seq: 1}).Check(tb).IsolatedFrom("b", WithOtherTrace(Trace{SessionID: "b", Calls: []Call{y}})) {
@@ -280,15 +280,15 @@ func TestIsolatedFromFixtures(t *testing.T) {
 	})
 
 	t.Run("since_keeps_earlier_introduced_turns", func(t *testing.T) {
-		first := isolationCall("a", "call_a1", 1, "", `{"messages":[{"role":"user","content":"What is my biological age?"}]}`)
+		first := isolationCall("a", "call_a1", 1, "", `{"messages":[{"role":"user","content":"Where is my order?"}]}`)
 		second := isolationCall("a", "call_a2", 2, "", `{
 			"messages":[
-				{"role":"user","content":"What is my biological age?"},
+				{"role":"user","content":"Where is my order?"},
 				{"role":"assistant","content":"42"},
-				{"role":"user","content":"And what about my BMI?"}
+				{"role":"user","content":"And what about the refund?"}
 			]
 		}`)
-		other := isolationCall("b", "call_b", 1, "", `{"messages":[{"role":"user","content":"What is my biological age?"}]}`)
+		other := isolationCall("b", "call_b", 1, "", `{"messages":[{"role":"user","content":"Where is my order?"}]}`)
 		full := Trace{SessionID: "a", Calls: []Call{first, second}}
 		tb := &fakeTB{}
 		if !full.Query().Since(Mark{Seq: 1}).Check(tb).IsolatedFrom("b", WithOtherTrace(Trace{SessionID: "b", Calls: []Call{other}})) {
@@ -376,17 +376,17 @@ func TestIsolatedFromFixtures(t *testing.T) {
 	})
 
 	t.Run("ignore_texts", func(t *testing.T) {
-		origin := isolationCall("a", "call_a", 1, "", `{"messages":[{"role":"user","content":"What is my biological age?"}]}`)
+		origin := isolationCall("a", "call_a", 1, "", `{"messages":[{"role":"user","content":"Where is my order?"}]}`)
 		replay := isolationCall("b", "call_b", 1, "", `{
 			"messages":[
-				{"role":"user","content":"What is my biological age?"},
+				{"role":"user","content":"Where is my order?"},
 				{"role":"assistant","content":"42"},
-				{"role":"user","content":"And what about my BMI?"}
+				{"role":"user","content":"And what about the refund?"}
 			]
 		}`)
 		tb := &fakeTB{}
 		a := Trace{SessionID: "b", Calls: []Call{replay}}.Query().Check(tb)
-		if !a.IsolatedFrom("a", WithOtherTrace(Trace{SessionID: "a", Calls: []Call{origin}}), IgnoreTexts("What is my biological age?")) {
+		if !a.IsolatedFrom("a", WithOtherTrace(Trace{SessionID: "a", Calls: []Call{origin}}), IgnoreTexts("Where is my order?")) {
 			t.Fatalf("IgnoreTexts should drop the replayed turn: %v", tb.messages)
 		}
 	})
@@ -644,7 +644,7 @@ func isolationVectorTrace(sessionID string, calls []isolationVectorCall) (Trace,
 
 // isolationVectorRef is the proxy git ref used to drift-check
 // testdata/isolation. Default is the pinned release (ProxyVersion), not
-// proxy main — main can move ahead of the pin (DOG-32/33 vectors).
+// proxy main — main can move ahead of the pin.
 // Override with LLMENTARY_ISOLATION_VECTORS_REF.
 func isolationVectorRef() string {
 	if env := strings.TrimSpace(os.Getenv("LLMENTARY_ISOLATION_VECTORS_REF")); env != "" {

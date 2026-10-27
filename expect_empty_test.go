@@ -50,7 +50,7 @@ func TestExpectAllowEmptyCallCountZero(t *testing.T) {
 	rec.flush()
 	joined := strings.Join(rec.messages, "\n")
 	if !strings.Contains(joined, "no calls recorded for session empty") {
-		t.Fatalf("strict Expect should fail DOG-2 style:\n%s", joined)
+		t.Fatalf("strict Expect should fail on an empty session:\n%s", joined)
 	}
 }
 
@@ -60,7 +60,7 @@ func TestIsolatedFromUnknownOtherIDClientLookup(t *testing.T) {
 			ID:         "call_x1",
 			SessionID:  "sess-x",
 			Seq:        1,
-			RawRequest: []byte(`{"messages":[{"role":"user","content":"What is my biological age?"}]}`),
+			RawRequest: []byte(`{"messages":[{"role":"user","content":"Where is my order?"}]}`),
 		}},
 	})
 	lm := New(t, WithControlURL(srv.URL), WithProxyURL(srv.URL), WithSessionID("sess-x"), WithWait(time.Millisecond, time.Second))

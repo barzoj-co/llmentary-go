@@ -120,11 +120,11 @@ func TestOffersToolAndWithoutTools(t *testing.T) {
 	if len(router) != 1 || router[0].Seq != 1 {
 		t.Fatalf("without_tools=%v", ids(router))
 	}
-	specialist := trace.Query().OffersTool("get_risks").Calls()
+	specialist := trace.Query().OffersTool("get_order_status").Calls()
 	if len(specialist) != 2 || specialist[0].Seq != 2 || specialist[1].Seq != 3 {
-		t.Fatalf("offers_tool get_risks=%v", ids(specialist))
+		t.Fatalf("offers_tool get_order_status=%v", ids(specialist))
 	}
-	follow := trace.Query().OffersTool("get_risks").Since(Mark{Seq: 2}).Calls()
+	follow := trace.Query().OffersTool("get_order_status").Since(Mark{Seq: 2}).Calls()
 	if len(follow) != 1 || follow[0].Seq != 3 {
 		t.Fatalf("follow-up since mark=%v", ids(follow))
 	}
@@ -218,25 +218,25 @@ func TestNonEmptyFilterAssertionsUnchanged(t *testing.T) {
 	if !router.Expect(t).NoErrors() {
 		t.Fatal("non-empty without_tools NoErrors should pass")
 	}
-	if !router.Expect(t).ToolNotCalled("get_risks") {
-		t.Fatal("router turn should not call get_risks")
+	if !router.Expect(t).ToolNotCalled("get_order_status") {
+		t.Fatal("router turn should not call get_order_status")
 	}
 	if !router.Expect(t).CallCount(1) {
 		t.Fatal("router CallCount(1) should pass")
 	}
-	specialist := trace.Query().OffersTool("get_risks")
+	specialist := trace.Query().OffersTool("get_order_status")
 	if !specialist.Expect(t).CallCount(2) {
 		t.Fatal("offers_tool CallCount(2) should pass")
 	}
-	if !specialist.Expect(t).ToolCalled("get_risks") {
+	if !specialist.Expect(t).ToolCalled("get_order_status") {
 		t.Fatal("offers_tool ToolCalled should pass")
 	}
 }
 
 func goldenMultiCallTrace() Trace {
 	six := []ToolDecl{
-		{Name: "get_risks"}, {Name: "get_user_health_tips"}, {Name: "get_labs"},
-		{Name: "get_meds"}, {Name: "get_sleep"}, {Name: "get_user_biological_age"},
+		{Name: "get_order_status"}, {Name: "get_shipping_options"}, {Name: "get_invoices"},
+		{Name: "get_returns"}, {Name: "get_addresses"}, {Name: "get_account_profile"},
 	}
 	return Trace{SessionID: "s", Calls: []Call{
 		{
@@ -251,13 +251,13 @@ func goldenMultiCallTrace() Trace {
 		{
 			Seq:        2,
 			HTTPStatus: 200,
-			Normalized: Normalized{ToolsDeclared: six, ToolCalls: []ToolCall{{ID: "c1", Name: "get_risks"}}},
+			Normalized: Normalized{ToolsDeclared: six, ToolCalls: []ToolCall{{ID: "c1", Name: "get_order_status"}}},
 		},
 		{
 			Seq:        3,
 			HTTPStatus: 200,
-			Normalized: Normalized{ToolsDeclared: six, ToolResultsIn: []ToolResult{{CallID: "c1", Name: "get_risks"}}},
-			RawRequest: []byte(`{"messages":[{"role":"tool","tool_call_id":"c1","content":"SEED_Cardiovascular_Risk"}]}`),
+			Normalized: Normalized{ToolsDeclared: six, ToolResultsIn: []ToolResult{{CallID: "c1", Name: "get_order_status"}}},
+			RawRequest: []byte(`{"messages":[{"role":"tool","tool_call_id":"c1","content":"SEED_Order_Status"}]}`),
 		},
 	}}
 }
