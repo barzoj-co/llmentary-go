@@ -3,6 +3,14 @@
 ## [0.5.4](https://github.com/barzoj-co/llmentary-go/compare/v0.5.3...v0.5.4) (2026-10-26)
 
 
+### Upgrade notes
+
+0.5.4 changes test outcomes for some existing suites:
+
+- `CallCount(n)` no longer counts cancelled calls (calls the client aborted, e.g. on barge-in). The failure message mentions the cancelled calls that were not counted only when they would explain the mismatch (n is above the counted total but within got + cancelled); other mismatches use the plain got/want message. To keep the old total, pass `IncludeCancelled()`: `a.CallCount(3, llmentary.IncludeCancelled())`.
+- `NoErrors()` now checks failed calls only; cancelled calls no longer make it fail. Use `NoCancelled()` if you want the old strictness. The failure message changed to `unexpected failed call #N (outcome=failed, error=..., http_status=...)`, so tests that match on the old text need updating.
+
+
 ### Bug Fixes
 
 * add ExcludeCancelled wait option, pin proxy v0.5.3, live cancel e2e (DOG-58 G5-G6) ([#54](https://github.com/barzoj-co/llmentary-go/issues/54)) ([8753f5f](https://github.com/barzoj-co/llmentary-go/commit/8753f5fe698dfc5953418842f65909a58bf24c24))
