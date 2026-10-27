@@ -13,9 +13,9 @@
 
 ### Bug Fixes
 
-* add ExcludeCancelled wait option, pin proxy v0.5.3, live cancel e2e (DOG-58 G5-G6) ([#54](https://github.com/barzoj-co/llmentary-go/issues/54)) ([8753f5f](https://github.com/barzoj-co/llmentary-go/commit/8753f5fe698dfc5953418842f65909a58bf24c24))
-* classify call outcomes; NoErrors checks failed calls only; CallCount excludes cancelled (DOG-58 G1-G4) ([#51](https://github.com/barzoj-co/llmentary-go/issues/51)) ([8549aac](https://github.com/barzoj-co/llmentary-go/commit/8549aacab6884c57f6580dd3190cdb729bae8e1e))
-* wait-timeout hint names the right timeout (DOG-49b) ([#53](https://github.com/barzoj-co/llmentary-go/issues/53)) ([18ccdf7](https://github.com/barzoj-co/llmentary-go/commit/18ccdf7b72d91eed0f9c267c79e3b84995cb0575))
+* add ExcludeCancelled wait option, pin proxy v0.5.3, live cancel e2e ([#54](https://github.com/barzoj-co/llmentary-go/issues/54)) ([8753f5f](https://github.com/barzoj-co/llmentary-go/commit/8753f5fe698dfc5953418842f65909a58bf24c24))
+* classify call outcomes; NoErrors checks failed calls only; CallCount excludes cancelled ([#51](https://github.com/barzoj-co/llmentary-go/issues/51)) ([8549aac](https://github.com/barzoj-co/llmentary-go/commit/8549aacab6884c57f6580dd3190cdb729bae8e1e))
+* wait-timeout hint names the right timeout ([#53](https://github.com/barzoj-co/llmentary-go/issues/53)) ([18ccdf7](https://github.com/barzoj-co/llmentary-go/commit/18ccdf7b72d91eed0f9c267c79e3b84995cb0575))
 
 ## [0.5.3](https://github.com/barzoj-co/llmentary-go/compare/v0.5.2...v0.5.3) (2026-10-26)
 

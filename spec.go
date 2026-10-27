@@ -122,7 +122,7 @@ func IgnorePaths(paths ...string) SpecOption {
 }
 
 // IgnoreKeywords skips findings whose keyword or kind matches.
-// On ignored_fields this is the same filter as IgnoreKinds (DOG-55).
+// On ignored_fields this is the same filter as IgnoreKinds.
 func IgnoreKeywords(keywords ...string) SpecOption {
 	return func(o *specOptions) { o.IgnoreKeywords = append(o.IgnoreKeywords, keywords...) }
 }

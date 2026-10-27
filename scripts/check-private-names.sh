@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Fail if a [a-z0-9]+ token hashes to a banned SHA-256 digest.
-# Tokens are lowercased; hyphens split, so chat-service / voice-agent / service-a pass.
+# Tokens are lowercased; hyphens split, so support-bot / demo-agent / service-a pass.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -115,10 +115,10 @@ self_test() {
   extra="$(digest_of 'bannedfixturetoken')"
 
   mkdir -p "${tmp}/ok" "${tmp}/bad" "${tmp}/badpath"
-  printf '%s\n' 'session_id: chat-service-run1' 'name: voice-agent' 'peer: service-a' \
+  printf '%s\n' 'session_id: support-bot-run1' 'name: demo-agent' 'peer: service-a' \
     >"${tmp}/ok/generic.txt"
   printf '%s\n' 'session_id: bannedfixturetoken-run1' >"${tmp}/bad/legacy.txt"
-  printf '%s\n' 'BannedFixtureToken-demo' >"${tmp}/bad/voice.txt"
+  printf '%s\n' 'BannedFixtureToken-demo' >"${tmp}/bad/sample.txt"
   printf '%s\n' 'ok' >"${tmp}/badpath/bannedfixturetoken-run1.json"
   mkdir -p "${tmp}/selfname"
   printf '%s\n' 'bannedfixturetoken' >"${tmp}/selfname/check-private-names.sh"
@@ -140,8 +140,8 @@ self_test() {
     echo "${hits}" >&2
     failed=1
   fi
-  if ! grep -Fq 'voice.txt:1' <<<"${hits}"; then
-    echo "self-test: expected content hit in voice.txt" >&2
+  if ! grep -Fq 'sample.txt:1' <<<"${hits}"; then
+    echo "self-test: expected content hit in sample.txt" >&2
     echo "${hits}" >&2
     failed=1
   fi
@@ -200,7 +200,7 @@ if ! hits="$(scan "${ROOT}")"; then
   exit 1
 fi
 if [[ -n "${hits}" ]]; then
-  echo "private project names must be genericized (chat-service, voice-agent, service-a):" >&2
+  echo "private project names must be genericized (support-bot, demo-agent, service-a):" >&2
   echo "${hits}" >&2
   exit 1
 fi

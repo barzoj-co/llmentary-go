@@ -25,9 +25,9 @@ func loadSpecCall(t *testing.T, name string) Call {
 }
 
 func TestSpecAccessorsGoldenPayloads(t *testing.T) {
-	clean := loadSpecCall(t, "chat-service-run1-clean.json")
+	clean := loadSpecCall(t, "support-bot-run1-clean.json")
 	if clean.Validation() == nil {
-		t.Fatal("chat-service run-1 fixture must expose validation metadata")
+		t.Fatal("support-bot fixture must expose validation metadata")
 	}
 	if clean.Validation().Mode != "warn" || clean.Validation().Profile != "relaxed" {
 		t.Fatalf("validation=%+v", clean.Validation())
@@ -37,7 +37,7 @@ func TestSpecAccessorsGoldenPayloads(t *testing.T) {
 		t.Fatal("spec_violations:[] must count as checked")
 	}
 	if len(findings) != 0 {
-		t.Fatalf("chat-service run-1 must read as clean, got %#v", findings)
+		t.Fatalf("support-bot fixture must read as clean, got %#v", findings)
 	}
 
 	absent := loadSpecCall(t, "not-checked.json")
@@ -65,9 +65,9 @@ func TestSpecAccessorsGoldenPayloads(t *testing.T) {
 }
 
 func TestNoSpecViolationsContract(t *testing.T) {
-	clean := Trace{SessionID: "s", Calls: []Call{loadSpecCall(t, "chat-service-run1-clean.json")}}
+	clean := Trace{SessionID: "s", Calls: []Call{loadSpecCall(t, "support-bot-run1-clean.json")}}
 	if !(&Assertions{t: t, trace: clean, fatal: true}).NoSpecViolations() {
-		t.Fatal("clean chat-service payload should pass")
+		t.Fatal("clean support-bot payload should pass")
 	}
 
 	violations := Trace{SessionID: "s", Calls: []Call{loadSpecCall(t, "violations.json")}}
@@ -145,12 +145,12 @@ func TestPathMatchesWholeSegments(t *testing.T) {
 }
 
 func TestNoIgnoredFieldsContract(t *testing.T) {
-	clean := Trace{SessionID: "s", Calls: []Call{loadSpecCall(t, "chat-service-run1-clean.json")}}
+	clean := Trace{SessionID: "s", Calls: []Call{loadSpecCall(t, "support-bot-run1-clean.json")}}
 	ignored := Trace{SessionID: "s", Calls: []Call{loadSpecCall(t, "ignored-fields.json")}}
 	off := Trace{SessionID: "s", Calls: []Call{loadSpecCall(t, "not-checked.json")}}
 
 	if !(&Assertions{t: t, trace: clean, fatal: true}).NoIgnoredFields() {
-		t.Fatal("clean chat-service payload should pass NoIgnoredFields")
+		t.Fatal("clean support-bot payload should pass NoIgnoredFields")
 	}
 	tb := &fakeTB{}
 	(&Assertions{t: tb, trace: ignored}).NoIgnoredFields()
@@ -162,7 +162,7 @@ func TestNoIgnoredFieldsContract(t *testing.T) {
 	}
 	wantLine := "#1 openai.chat request tools.0.function.parameters.properties.unit.enumDescriptions: vendor keyword ignored — enumDescriptions"
 	if strings.Join(tb.messages, "\n") != wantLine {
-		t.Fatalf("failure text changed (DOG-55 A2):\n got %q\nwant %q", tb.messages, wantLine)
+		t.Fatalf("failure text changed:\n got %q\nwant %q", tb.messages, wantLine)
 	}
 	offTB := &fakeTB{}
 	(&Assertions{t: offTB, trace: off}).NoIgnoredFields()
@@ -235,7 +235,7 @@ func TestNoIgnoredFieldsMinSeverityAndKinds(t *testing.T) {
 	joined := strings.Join(tb.messages, "\n")
 	for _, want := range []string{"vendor extra foo", "compatible_optional", "warning-level ignored field", "no severity"} {
 		if !strings.Contains(joined, want) {
-			t.Fatalf("default NoIgnoredFields must keep every entry (DOG-55 A1): missing %q in %q", want, tb.messages)
+			t.Fatalf("default NoIgnoredFields must keep every entry: missing %q in %q", want, tb.messages)
 		}
 	}
 
@@ -371,7 +371,7 @@ func ignoredFieldTrace(entry string) Trace {
 
 func TestTraceSpecViolationsAndSummary(t *testing.T) {
 	trace := Trace{SessionID: "s", Calls: []Call{
-		loadSpecCall(t, "chat-service-run1-clean.json"),
+		loadSpecCall(t, "support-bot-run1-clean.json"),
 		loadSpecCall(t, "violations.json"),
 		loadSpecCall(t, "not-checked.json"),
 	}}
@@ -397,7 +397,7 @@ func TestSpecStatusLabelRequestOnly(t *testing.T) {
 		t.Fatalf("request_only label=%q", got)
 	}
 
-	clean := loadSpecCall(t, "chat-service-run1-clean.json")
+	clean := loadSpecCall(t, "support-bot-run1-clean.json")
 	if got := clean.SpecStatusLabel(); got != "clean" {
 		t.Fatalf("clean label=%q", got)
 	}
@@ -437,8 +437,8 @@ func TestSummaryOmitsStatusZeroOnAbort(t *testing.T) {
 }
 
 func TestSpecFixturesUseGenericServiceNames(t *testing.T) {
-	clean := loadSpecCall(t, "chat-service-run1-clean.json")
-	if clean.SessionID != "chat-service-run1" {
+	clean := loadSpecCall(t, "support-bot-run1-clean.json")
+	if clean.SessionID != "support-bot-run1" {
 		t.Fatalf("session_id=%q", clean.SessionID)
 	}
 	cmd := exec.Command("bash", filepath.Join("scripts", "check-private-names.sh"))

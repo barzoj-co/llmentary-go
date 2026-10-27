@@ -162,7 +162,7 @@ func TestUnknownPrefixNotForwarded(t *testing.T) {
 		llmentary.WithUpstream("openai="+upstream.URL),
 		llmentary.WithStartTimeout(10*time.Second),
 	)
-	resp, err := http.Post(proxy.ProxyURL+"/dogfood/v1/chat/completions", "application/json", strings.NewReader(`{"model":"gpt-fixture","messages":[{"role":"user","content":"hi"}]}`))
+	resp, err := http.Post(proxy.ProxyURL+"/myapp/v1/chat/completions", "application/json", strings.NewReader(`{"model":"gpt-fixture","messages":[{"role":"user","content":"hi"}]}`))
 	if err != nil {
 		t.Fatal(err)
 	}

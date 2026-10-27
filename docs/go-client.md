@@ -70,7 +70,7 @@ sessions, `; known sessions: a, b` once (never `known sessions: GET /sessions`).
 
 ## Negative tests: asserting zero LLM calls
 
-`Expect()` on a never-created session stays strict (DOG-2). Use an explicit
+`Expect()` on a never-created session stays strict. Use an explicit
 opt-in:
 
 ```go
@@ -168,7 +168,7 @@ mark := lm.Mark(ctx)
 // … next turn …
 assert := lm.Expect(ctx, llmentary.Since(mark))
 router := trace.Query().WithoutTools()
-specialist := trace.Query().OffersTool("get_risks")
+specialist := trace.Query().OffersTool("get_order_status")
 ```
 
 `Summary()` prints `#<seq> (<id>)` so `Mark` / `Since` can be compared to
@@ -217,7 +217,7 @@ phase := call.AbortPhase  // before_headers / after_headers when present
 ## Testing interruptions / barge-in
 
 `Call.ClientAborted` and `Call.AbortPhase` are the typed abort fields
-(DOG-27). `normalized.client_aborted` stays as a deprecated 0.x alias and
+. `normalized.client_aborted` stays as a deprecated 0.x alias and
 is copied onto `ClientAborted` when the top-level key is absent. Phase
 values are `before_headers` and `after_headers`; `abort_phase` is omitted
 when the call is not aborted. A client close after `[DONE]` or a terminal

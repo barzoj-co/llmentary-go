@@ -19,7 +19,7 @@ func TestMentionsAnyTable(t *testing.T) {
 		{"degree compact", "it is 20°C outside", []string{"20 °C"}, true},
 		{"degree spaced", "Temperature: 20 °C", []string{"20°C"}, true},
 		{"degrees word", "about 20 degrees today", []string{"20°C"}, true},
-		{"casefold", "Moderate cardiovascular risk", []string{"moderate"}, true},
+		{"casefold", "Moderate shipping delay", []string{"moderate"}, true},
 		{"no match", "the sky is blue", []string{"20", "sunny"}, false},
 		{"number inside larger", "It is 120 °C", []string{"20"}, false},
 		{"year 2020", "in 2020", []string{"20"}, false},

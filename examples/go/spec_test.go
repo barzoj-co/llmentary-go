@@ -96,7 +96,7 @@ func TestCompatibleTargetRecordsVendorField(t *testing.T) {
 	trace.Query().Check(sideTB).NoIgnoredFields(llmentary.Side("request"))
 	sideTB.flush()
 	if !sideTB.failed {
-		t.Fatal("NoIgnoredFields(Side(request)) must fail on request vendor_field (DOG-45)")
+		t.Fatal("NoIgnoredFields(Side(request)) must fail on request vendor_field")
 	}
 	joinedSide := strings.Join(sideTB.messages, "\n")
 	if !strings.Contains(joinedSide, "request") || !strings.Contains(joinedSide, "foo") {

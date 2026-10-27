@@ -14,8 +14,8 @@ import (
 )
 
 func TestIsolatedFromWaitsOtherInFlightLeak(t *testing.T) {
-	secret := "Y follow-up that X must never see (nonce-dog37)"
-	yOpen := isolationCall("y", "call_y1", 1, "header", `{"messages":[{"role":"user","content":"Y opening question (nonce-dog37)"}]}`)
+	secret := "Y follow-up that X must never see (nonce-case37)"
+	yOpen := isolationCall("y", "call_y1", 1, "header", `{"messages":[{"role":"user","content":"Y opening question (nonce-case37)"}]}`)
 	ySecret := isolationCall("y", "call_y2", 2, "header", `{"messages":[{"role":"user","content":"`+secret+`"}]}`)
 	xCall := isolationCall("x", "call_x1", 1, "header", `{
 		"messages":[
@@ -178,7 +178,7 @@ func TestIsolatedFromOtherDeletedMidWait(t *testing.T) {
 	rec := &fakeTB{}
 	x.t = rec
 	if x.Check(context.Background()).IsolatedFrom("y") {
-		t.Fatal("deleted other is empty (DOG-32)")
+		t.Fatal("deleted other is empty")
 	}
 	rec.flush()
 	joined := strings.Join(rec.messages, "\n")

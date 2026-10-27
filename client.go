@@ -419,9 +419,9 @@ func ExcludeRetries() CallCountOption {
 	}
 }
 
-// ExcludeAborted skips client-aborted calls when counting (DOG-50).
+// ExcludeAborted skips client-aborted calls when counting.
 //
-// Deprecated: cancelled calls are excluded by default (DOG-58); kept for
+// Deprecated: cancelled calls are excluded by default; kept for
 // compatibility.
 func ExcludeAborted() CallCountOption {
 	return func(o *CallCountOptions) {
@@ -429,8 +429,8 @@ func ExcludeAborted() CallCountOption {
 	}
 }
 
-// IncludeCancelled counts cancelled (client-aborted) calls again (DOG-58).
-// It is the opt-out of the DOG-58 default, which excludes cancelled calls;
+// IncludeCancelled counts cancelled (client-aborted) calls again.
+// It is the opt-out of the default, which excludes cancelled calls;
 // failed calls always count.
 func IncludeCancelled() CallCountOption {
 	return func(o *CallCountOptions) {
@@ -450,14 +450,14 @@ func applyCallCountOptions(opts []CallCountOption) CallCountOptions {
 
 // countCalls counts the calls a CallCount assertion compares against.
 // Cancelled calls (Call.Outcome() == OutcomeCancelled) are skipped unless
-// IncludeCancelled() is passed (DOG-58); failed calls always count.
+// IncludeCancelled() is passed; failed calls always count.
 func countCalls(calls []Call, options CallCountOptions) int {
 	count, _ := countCallsDetailed(calls, options)
 	return count
 }
 
 // callCountCancelledHint is the diagnostic hint that both CallCount failure
-// paths append when cancelled calls were excluded (DOG-58).
+// paths append when cancelled calls were excluded.
 const callCountCancelledHint = " (cancelled excluded: %d; use IncludeCancelled() to count them)"
 
 // countCallsDetailed also reports how many cancelled calls were skipped.

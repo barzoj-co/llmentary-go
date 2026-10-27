@@ -143,7 +143,7 @@ assert.TokensBelow(1000)
 `NoErrors` / `ToolNotCalled` fail when a filter or `Since` matches zero calls.
 Use `llmentary.AllowEmpty()` only when the test intends an empty match.
 
-`CallCount` counts non-cancelled calls by default (DOG-58): cancelled
+`CallCount` counts non-cancelled calls by default: cancelled
 (client-aborted) calls are excluded, `failed` calls still count. Pass
 `llmentary.IncludeCancelled()` for the old all-calls count; a mismatch then
 reports `cancelled excluded: N`. `llmentary.ExcludeAborted()` is deprecated
@@ -176,7 +176,7 @@ assertion API.
 ### Negative tests: asserting zero LLM calls
 
 A session that never hit the model is a 404, not an empty trace. `Wait` /
-`Expect` stay strict (DOG-2: a bypassed proxy must not look clean). Opt in:
+`Expect` stay strict. Opt in:
 
 ```go
 lm.ExpectNoCalls(ctx)                                 // 404 passes; N calls fail with the summary

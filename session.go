@@ -504,7 +504,7 @@ func (q Query) Retries() Query {
 	return q.keep("retries", func(c Call) bool { return c.RetryCount != nil && *c.RetryCount > 0 })
 }
 
-// Aborted keeps client-aborted calls (DOG-50). After-headers aborts
+// Aborted keeps client-aborted calls. After-headers aborts
 // still have HTTP 200, so Status(0) is not a substitute.
 func (q Query) Aborted() Query {
 	return q.keep("aborted", func(c Call) bool { return c.Aborted() })
@@ -516,7 +516,7 @@ func (q Query) Committed() Query {
 	return q.keep("committed", func(c Call) bool { return !c.Aborted() })
 }
 
-// Outcome keeps calls whose terminal outcome (DOG-58) is one of states, e.g.
+// Outcome keeps calls whose terminal outcome is one of states, e.g.
 // Outcome(OutcomeCommitted) or Outcome(OutcomeCancelled, OutcomeFailed).
 // In-flight calls are never matched: they have no outcome.
 func (q Query) Outcome(states ...string) Query {
