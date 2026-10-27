@@ -1,7 +1,5 @@
 # llmentary-go
 
-Go client for deterministic, trace-based LLM integration tests.
-
 [![CI](https://github.com/barzoj-co/llmentary-go/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/barzoj-co/llmentary-go/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/barzoj-co/llmentary-go/graph/badge.svg)](https://codecov.io/gh/barzoj-co/llmentary-go)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/barzoj-co/llmentary-go/badge)](https://scorecard.dev/viewer/?uri=github.com/barzoj-co/llmentary-go)
@@ -9,249 +7,91 @@ Go client for deterministic, trace-based LLM integration tests.
 [![Go Reference](https://pkg.go.dev/badge/github.com/barzoj-co/llmentary-go.svg)](https://pkg.go.dev/github.com/barzoj-co/llmentary-go)
 [![Release](https://img.shields.io/github/v/release/barzoj-co/llmentary-go?sort=semver)](https://github.com/barzoj-co/llmentary-go/releases)
 
-llmentary-go is the Go client for [llmentary](https://github.com/barzoj-co/llmentary).
-Point an OpenAI-compatible SDK at the local recording proxy, then assert on the
-recorded trace: tool names, arguments, order, retries, token usage, latency, and
-provider errors. The client never uses an LLM judge.
+Go client for [llmentary](https://github.com/barzoj-co/llmentary), a recording
+proxy for testing LLM applications. Your test sends OpenAI SDK requests through
+the proxy to the real provider, then asserts on what was recorded: tools called
+and their arguments, call count, tokens, latency, errors.
+
+Documentation: **https://barzoj-co.github.io/llmentary/**
 
 ## Install
 
 ```bash
-go get github.com/barzoj-co/llmentary-go
+go get github.com/barzoj-co/llmentary-go github.com/openai/openai-go@v1.12.0
+go install github.com/barzoj-co/llmentary/cmd/llmentary@latest   # the proxy
 ```
 
-Install the proxy from [barzoj-co/llmentary](https://github.com/barzoj-co/llmentary)
-GitHub Releases (`v0.5.3`), or `go install github.com/barzoj-co/llmentary/cmd/llmentary@v0.5.3`.
-Put it on your `PATH` as `llmentary`, or set `LLMENTARY_BIN`. Lookup details:
-[docs/binaries.md](docs/binaries.md).
+`go install` puts the binary in `$(go env GOPATH)/bin`. Add that directory to
+`PATH`, or set `LLMENTARY_BIN` to the binary. Start the proxy before running
+tests:
+
+```bash
+llmentary --listen 127.0.0.1:7777 --control 127.0.0.1:7778
+```
+
+Or start it from the test and pass its URLs to `New`:
+
+```go
+proxy := llmentary.StartForTest(t)
+lm := llmentary.New(t,
+	llmentary.WithProxyURL(proxy.ProxyURL),
+	llmentary.WithControlURL(proxy.ControlURL),
+)
+```
 
 ## Quickstart
 
-Run the proxy (no `--upstream` needed: it defaults to
-`openai=https://api.openai.com/v1`). `llmentary.New(t)` tags requests with
-`X-Test-Session`:
-
-```bash
-llmentary \
-  --listen 127.0.0.1:7777 \
-  --control 127.0.0.1:7778
-```
-
 ```go
-package myapp_test
+func TestModelCallsWeatherTool(t *testing.T) {
+	ctx := context.Background()
+	lm := llmentary.New(t)
 
-import (
-    "context"
-    "os"
-    "testing"
+	client := openai.NewClient(
+		option.WithAPIKey(os.Getenv("OPENAI_API_KEY")),
+		option.WithBaseURL(lm.OpenAIBaseURL("")),
+		option.WithHTTPClient(lm.HTTPClient()), // tags requests with this test's session
+		option.WithMaxRetries(0),                // a retry would be a second recorded call
+	)
+	_, err := client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
+		Model:      "gpt-4.1-mini",
+		Messages:   []openai.ChatCompletionMessageParamUnion{openai.UserMessage("What's the weather in Paris?")},
+		Tools:      []openai.ChatCompletionToolParam{weatherTool},
+		ToolChoice: openai.ChatCompletionToolChoiceOptionUnionParam{OfAuto: openai.String("required")},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 
-    "github.com/barzoj-co/llmentary-go"
-    "github.com/openai/openai-go"
-    "github.com/openai/openai-go/option"
-)
-
-func TestWeatherTool(t *testing.T) {
-    lm := llmentary.New(t)
-
-    client := openai.NewClient(
-        option.WithAPIKey(os.Getenv("OPENAI_API_KEY")),
-        option.WithBaseURL(lm.OpenAIBaseURL("")), // http://127.0.0.1:7777/v1
-        option.WithHTTPClient(lm.HTTPClient()),         // injects X-Test-Session
-        option.WithMaxRetries(0),
-    )
-
-    _, err := client.Chat.Completions.New(context.Background(), openai.ChatCompletionNewParams{
-        Model: "gpt-4.1-mini",
-        Messages: []openai.ChatCompletionMessageParamUnion{
-            openai.UserMessage("Weather in Paris?"),
-        },
-        Tools: []openai.ChatCompletionToolParam{{
-            Function: openai.FunctionDefinitionParam{
-                Name: "get_weather",
-                Parameters: openai.FunctionParameters{
-                    "type": "object",
-                    "properties": map[string]any{
-                        "city": map[string]any{"type": "string"},
-                    },
-                    "required": []string{"city"},
-                },
-            },
-        }},
-        ToolChoice: openai.ChatCompletionToolChoiceOptionParamOfChatCompletionNamedToolChoice(
-            openai.ChatCompletionNamedToolChoiceFunctionParam{Name: "get_weather"},
-        ),
-    })
-    if err != nil {
-        t.Fatal(err)
-    }
-
-    assert := lm.Expect(context.Background())
-    assert.CallCount(1)
-    assert.ToolCalled("get_weather", llmentary.ArgsSubset(map[string]any{"city": "Paris"}))
-    assert.NoRetries()
-    assert.NoErrors()
-    assert.TokensBelow(1000)
+	check := lm.Expect(ctx)
+	check.CallCount(1)
+	check.ToolCalled("get_weather", llmentary.ArgsSubset(map[string]any{"city": "Paris"}))
 }
 ```
 
-`OpenAIBaseURL("")` returns the proxy's `/v1` base URL (the default OpenAI upstream), while `OpenAIBaseURL("openai")` — or any named upstream — returns the path-routed `/u/<name>` form (e.g. `/u/openai`); both reach the same OpenAI upstream, and the named form is what the main llmentary README uses.
-
-```bash
-OPENAI_API_KEY=sk-... go test ./...
-```
-
-Service under test cannot send headers (import-time / env-only clients). Set
-the SDK base URL to `lm.PathBaseURL("")` **before** the app is constructed:
-
-```go
-func TestService(t *testing.T) {
-    lm := llmentary.New(t)
-    t.Setenv("OPENAI_BASE_URL", lm.PathBaseURL("")) // http://127.0.0.1:7777/s/<id>/v1
-    // construct or import the service after this line
-}
-```
-
-Black-box and sidecar recipes:
-[docs/black-box.md](https://github.com/barzoj-co/llmentary/blob/main/docs/black-box.md).
-When to assert on the trace vs the model's wording:
-[docs/assertions-guide.md](https://github.com/barzoj-co/llmentary/blob/main/docs/assertions-guide.md).
-Control API contract:
-[api/control/openapi.yaml](https://github.com/barzoj-co/llmentary/blob/main/api/control/openapi.yaml).
-
-The same API is exercised without a live provider in
-[`examples/go/weather_test.go`](examples/go/weather_test.go), which starts the
-proxy from the test with `StartForTest`.
+The full runnable file, with imports and the tool definition, is in the
+[Go getting-started guide](https://barzoj-co.github.io/llmentary/getting-started/go/).
 
 ## Assertions
 
-`lm.Expect(ctx)` waits until the session is quiet, then fails with `t.Fatal`.
-`lm.Check(ctx)` is the same API with `t.Error`. Filter recorded calls with
-`trace.Query()` before `Expect(t)` / `Check(t)`.
+- Tools: `ToolCalled`, `ToolNotCalled`, `ToolOrder`, `ArgsSubset`, `ToolResultInPrompt`.
+- Requests: `Model`, `RequestParam`, `PromptContains`, `SystemPromptContains`.
+- Reliability: `CallCount`, `NoRetries`, `NoErrors`, `Aborted`.
+- Budgets: `TokensAtMost`, `LatencyBelow`, `TTFTBelow`.
+- Isolation between sessions: `IsolatedFrom`
+  ([rules](https://github.com/barzoj-co/llmentary/blob/main/docs/isolation-spec.md),
+  [test vectors](https://github.com/barzoj-co/llmentary/tree/main/testdata/isolation)).
 
-```go
-mark := lm.Mark(context.Background())
-// … one turn …
-assert := lm.Expect(context.Background(), llmentary.Since(mark))
-assert.CallCount(1)
-assert.ToolCalled("get_weather", llmentary.ArgsSubset(map[string]any{"city": "Paris"}))
-assert.ToolNotCalled("delete_user")
-assert.NoRetries()
-assert.NoErrors()
-assert.TokensBelow(1000)
-```
-
-`NoErrors` / `ToolNotCalled` fail when a filter or `Since` matches zero calls.
-Use `llmentary.AllowEmpty()` only when the test intends an empty match.
-
-`CallCount` counts non-cancelled calls by default: cancelled
-(client-aborted) calls are excluded, `failed` calls still count. Pass
-`llmentary.IncludeCancelled()` for the old all-calls count; a mismatch then
-reports `cancelled excluded: N`. `llmentary.ExcludeAborted()` is deprecated
-(its exclusion is now the default) and `llmentary.ExcludeRetries()` is unchanged.
-
-`Call.ID` is unique across sessions in one proxy process; `Call.Seq` is
-1-based within the session. `Summary()` prints `#<seq> (<id>)`.
-
-Prove two path-prefix sessions stayed apart with
-`lm.Expect(ctx).IsolatedFrom(other.SessionID())`. `IsolatedFrom` waits
-on the other session with the same quiet/timeout as `Expect` (a
-pre-fetched `WithOtherTrace` is used as given). Matching follows the
-[isolation spec](https://github.com/barzoj-co/llmentary/blob/main/docs/isolation-spec.md):
-`session_id` ownership, no shared call ids, and no **foreign** user turn
-(exact normalized match of a user message this session never introduced).
-The first call introduces only its last user message; later calls
-introduce each new user-role message. The same canned prompt in two
-sessions passes; history replay of the other session's turn fails.
-System prompts and tool names are not compared.
-
-Behind an `openai-compatible` target, `NoIgnoredFields()` still reports
-info-level `compatible_optional` rows on every non-streamed answer. Prefer
-`NoSpecViolations()` plus `NoIgnoredFields(llmentary.Side("request"))` (still
-fails on request `vendor_field`), or `NoIgnoredFields(llmentary.MinSeverity("warning"))`
-to drop info. `IgnoreKinds` is the kind-named alias of `IgnoreKeywords`.
-
-See [docs/go-client.md](docs/go-client.md) for the full session, query, and
-assertion API.
-
-### Negative tests: asserting zero LLM calls
-
-A session that never hit the model is a 404, not an empty trace. `Wait` /
-`Expect` stay strict. Opt in:
-
-```go
-lm.ExpectNoCalls(ctx)                                 // 404 passes; N calls fail with the summary
-lm.Expect(ctx, llmentary.AllowEmpty()).CallCount(0)   // empty Expectation
-lm.Expect(ctx, llmentary.AllowEmpty()).IsolatedFrom(other.SessionID())
-```
-
-`IsolatedFrom` on a never-created or empty other session fails with
-`no calls recorded for session <id> (isolated_from needs calls on both
-sides)` (not `SessionNotFound`); with `AllowEmpty` it passes. A wait
-timeout on the other side that leaves only in-flight calls names that
-state instead of looking empty. Do not use `IsolatedFrom` against an
-unused session without that opt-in. Client messages contain
-`known sessions:` at most once.
-
-### Testing interruptions / barge-in
-
-A client cancel is a typed `Call` field. Older proxies only set
-`normalized.client_aborted`; the client copies that alias onto
-`Call.ClientAborted`. `AbortPhase` is `before_headers` or `after_headers`
-when the call was aborted; it is omitted otherwise. A client close after
-`[DONE]` or a terminal Responses event is not an abort.
-
-```go
-trace := lm.Wait(ctx)
-call := trace.Calls[0]
-if call.ClientAborted { // or call.Aborted()
-    phase := call.AbortPhase // "", before_headers, after_headers
-    _ = phase
-}
-lm.Expect(ctx).Aborted()
-```
-
-`http_status` is `0` for a before-headers abort, never `502`.
-`normalized.finish_reason` is `cancelled`.
-
-`NoErrors` checks the terminal outcome and fails only on a `failed` call:
-client cancels (both phases) are not errors; use `Aborted` / `NoCancelled` /
-`HasError` to assert them. `NoCancelled` is the explicit opt-in that fails on
-the first cancelled call.
+All assertions: [reference](https://barzoj-co.github.io/llmentary/reference/assertions/).
+Go API: [pkg.go.dev](https://pkg.go.dev/github.com/barzoj-co/llmentary-go) and
+[docs/go-client.md](docs/go-client.md).
 
 ## Waiting for calls
 
-The proxy `/sessions/{id}/wait` endpoint reads `timeout`, `quiet`, and
-optional `min_calls` as query parameters, for example
-`timeout=30s&quiet=500ms&min_calls=2`. Pass `llmentary.MinCalls(n)` to
-`Wait` / `Expect` / `Check`.
-
-| Setting | Default | Environment variable |
-|---|---|---|
-| Wait timeout | `30s` | `LLMENTARY_WAIT_TIMEOUT` |
-| Quiet period | `500ms` | `LLMENTARY_WAIT_QUIET` |
-
-Each variable accepts a Go duration (`45s`, `200ms`) or bare seconds (`45`,
-`0.2`). A wait timeout is a clear error: `wait timed out after 30s on session
-X (k calls so far, still active: n [call_1 …]). Raise LLMENTARY_WAIT_TIMEOUT`
-if the graph needs more time. In-flight details come from the 504 body when
-present; an older proxy falls back to the GET /sessions count. The client HTTP
-timeout is `timeout + quiet + 5s` so the request is not aborted before the
-proxy answers.
-
-`wait` on a never-created session: `404 session_not_found` immediately when
-`min_calls=0` (`IsSessionNotFound`); `504 wait_timeout` after quiet when
-`min_calls>=1` (`IsWaitTimeout`).
-
-```go
-_, err := client.Wait(ctx, "ghost", 200*time.Millisecond, 3*time.Second)
-if llmentary.IsSessionNotFound(err) {
-    // min_calls=0: the session was never created
-}
-_, err = client.Wait(ctx, "ghost", 200*time.Millisecond, 3*time.Second, llmentary.MinCalls(1))
-if llmentary.IsWaitTimeout(err) {
-    // min_calls>=1: waited for a call that never arrived
-}
-```
+`lm.Expect(ctx)` waits until the session has had no new calls for 500 ms
+(timeout 30 s) before checking. Change this with `llmentary.WithWait`, or
+`LLMENTARY_WAIT_QUIET` and `LLMENTARY_WAIT_TIMEOUT`. To check one turn of a
+conversation, see
+[Test one turn](https://barzoj-co.github.io/llmentary/how-to/scope-a-turn/).
 
 <!-- llmentary-repos:start -->
 ## llmentary repositories
