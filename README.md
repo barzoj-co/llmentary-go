@@ -94,6 +94,8 @@ func TestWeatherTool(t *testing.T) {
 }
 ```
 
+`OpenAIBaseURL("")` returns the proxy's `/v1` base URL (the default OpenAI upstream), while `OpenAIBaseURL("openai")` — or any named upstream — returns the path-routed `/u/<name>` form (e.g. `/u/openai`); both reach the same OpenAI upstream, and the named form is what the main llmentary README uses.
+
 ```bash
 OPENAI_API_KEY=sk-... go test ./...
 ```
